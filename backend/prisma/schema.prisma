@@ -1,0 +1,84 @@
+// Prisma schema - Sistema de Jueceo y Control de Accesos
+// Fase actual: formulario de registro + pago (Stripe)
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Categoria {
+  KIDS_AMATEUR
+  KIDS_BOYS
+  KIDS_GIRL
+  MASTERS_40_PLUS
+  JUVENIL_BOYS
+  JUVENIL_GIRL
+  BGIRLS
+  BBOYS
+  PUBLICO_GENERAL
+}
+
+enum Sexo {
+  MASCULINO
+  FEMENINO
+}
+
+enum TipoBoleto {
+  GENERAL
+  COMPETIDOR
+  STAFF
+  VIP
+  INVITADO
+}
+
+enum EstatusPago {
+  PENDIENTE
+  PAGADO
+  FALLIDO
+  REEMBOLSADO
+}
+
+model Registration {
+  id                    String      @id @default(uuid())
+
+  // Datos personales
+  nombres               String
+  apellidos             String
+  nombreArtistico       String
+  fechaNacimiento       DateTime
+  categoria             Categoria
+  sexo                  Sexo
+  estado                String
+  ciudad                String
+  correo                String      @unique
+  telefono              String
+  instagram             String?
+  academia              String?
+  crew                  String?
+  contactoEmergencia    String?
+
+  // Consentimientos legales
+  aceptaReglamento      Boolean     @default(false)
+  aceptaAvisoPrivacidad Boolean     @default(false)
+  aceptaUsoImagen       Boolean     @default(false)
+
+  // Boleto y pago
+  tipoBoleto            TipoBoleto
+  precioMXNCentavos     Int
+  estatusPago           EstatusPago @default(PENDIENTE)
+  stripeSessionId       String?     @unique
+  stripePaymentIntentId String?
+
+  // Acceso (se genera al confirmarse el pago, es de un solo uso)
+  qrToken               String?     @unique
+  qrEscaneadoEn         DateTime?
+
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+
+  @@map("registrations")
+}
