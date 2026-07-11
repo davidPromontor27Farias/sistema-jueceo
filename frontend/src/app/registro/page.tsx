@@ -2,38 +2,41 @@
 
 import { z } from "zod";
 import { useState } from "react";
-import type { ReactNode, InputHTMLAttributes } from "react";
 import Image from "next/image";
-import { useForm } from "react-hook-form";
+import { FormProvider, useForm, type FieldErrors } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { registrationFormSchema, type RegistrationFormValues } from "@/types/registrationForm";
-import { CATEGORIAS, ESTADOS_MEXICO } from "@/config/catalog";
+import { postRegistration, type RegistrationPayload } from "@/lib/api";
+import { StepDatosPersonales } from "./steps/StepDatosPersonales";
+import { StepCategoria } from "./steps/StepCategoria";
+import { StepContacto } from "./steps/StepContacto";
+import { StepLegal } from "./steps/StepLegal";
+import { StepResumen } from "./steps/StepResumen";
 
 type FieldName = keyof RegistrationFormValues;
 
-const inputClass =
-    "w-full rounded-md border border-boss-border bg-boss-panel px-3 py-2.5 text-foreground placeholder:text-boss-gray focus:border-boss-red focus:outline-none focus:ring-2 focus:ring-boss-red/40 transition-colors";
+// PENDIENTE: confirmar la sede exacta con el cliente.
+const SEDE_EVENTO = "Ciudad de México (sede por confirmar)";
 
 const STEPS: { title: string; fields: FieldName[] }[] = [
-    { title: "Datos personales", fields: ["nombres", "apellidos", "nombreArtistico", "fechaNacimiento", "sexo"] },
-    { title: "Categoría y procedencia", fields: ["categoria", "estado", "ciudad"] },
-    {
-        title: "Contacto y detalles",
-        fields: ["correo", "telefono", "instagram", "academia", "crew", "contactoEmergencia"],
-    },
-    { title: "Legal y confirmación", fields: ["aceptaReglamento", "aceptaAvisoPrivacidad", "aceptaUsoImagen"] },
+    { title: "Datos personales", fields: ["nombres", "apellidos", "nombreArtistico", "fechaNacimiento", "sexo", "nacionalidad"] },
+    { title: "Categoría y paquete", fields: ["categoria", "estado", "ciudad", "academiaCrew", "paqueteBase", "workshopsSeleccionados"] },
+    { title: "Contacto y foto", fields: ["correo", "telefono", "instagram", "contactoEmergencia", "fotoUrl"] },
+    { title: "Legal", fields: ["aceptaReglamento", "aceptaAvisoPrivacidad"] },
+    { title: "Resumen", fields: [] },
 ];
 
 export default function RegistroPage() {
-    const {
-        register,
-        handleSubmit,
-        trigger,
-        formState: { errors, isSubmitting },
-    } = useForm<z.input<typeof registrationFormSchema>, unknown, RegistrationFormValues>({
+    const methods = useForm<z.input<typeof registrationFormSchema>, unknown, RegistrationFormValues>({
         mode: "onChange",
         resolver: zodResolver(registrationFormSchema),
+        defaultValues: { workshopsSeleccionados: [] },
     });
+    const {
+        handleSubmit,
+        trigger,
+        formState: { isSubmitting },
+    } = methods;
 
     const [currentStep, setCurrentStep] = useState(0);
     const [isLeaving, setIsLeaving] = useState(false);
@@ -60,41 +63,28 @@ export default function RegistroPage() {
     const onSubmit = async (formValues: RegistrationFormValues) => {
         setServerError(null);
 
-        const payload = {
+        const payload: RegistrationPayload = {
             ...formValues,
             fechaNacimiento: formValues.fechaNacimiento.toISOString().slice(0, 10),
             instagram: formValues.instagram?.trim() ? formValues.instagram.trim() : undefined,
-            academia: formValues.academia?.trim() ? formValues.academia.trim() : undefined,
-            crew: formValues.crew?.trim() ? formValues.crew.trim() : undefined,
-            contactoEmergencia: formValues.contactoEmergencia?.trim()
-                ? formValues.contactoEmergencia.trim()
-                : undefined,
+            academiaCrew: formValues.academiaCrew?.trim() ? formValues.academiaCrew.trim() : undefined,
+            contactoEmergencia: formValues.contactoEmergencia?.trim() ? formValues.contactoEmergencia.trim() : undefined,
         };
 
-        try {
-            const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/registrations`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(payload),
-            });
+        const resultado = await postRegistration(payload);
 
-            const data = await response.json();
-
-            if (!response.ok) {
-                setServerError(data.error ?? "No se pudo completar el registro, revisa tus datos.");
-                return;
-            }
-
-            window.location.href = data.checkoutUrl;
-        } catch {
-            setServerError("No se pudo conectar con el servidor. Intenta de nuevo.");
+        if (!resultado.ok) {
+            setServerError(resultado.error);
+            return;
         }
+
+        window.location.assign(resultado.data.checkoutUrl);
     };
 
     // Si el envío falla la validación, el error puede estar en un campo de una
     // sección anterior que ya no está visible. Regresamos a la primera sección
     // (en orden) que contenga un campo con error, para que se pueda corregir.
-    const onInvalid = (formErrors: typeof errors) => {
+    const onInvalid = (formErrors: FieldErrors<z.input<typeof registrationFormSchema>>) => {
         const fieldsWithError = Object.keys(formErrors) as FieldName[];
         const stepWithError = STEPS.findIndex((step) =>
             step.fields.some((field) => fieldsWithError.includes(field)),
@@ -103,6 +93,8 @@ export default function RegistroPage() {
             setCurrentStep(stepWithError);
         }
     };
+
+    const esUltimoPaso = currentStep === STEPS.length - 1;
 
     return (
         <main className="min-h-screen bg-boss-black px-4 py-12 sm:py-16">
@@ -119,6 +111,7 @@ export default function RegistroPage() {
                     <span className="mt-4 inline-block rounded bg-boss-red px-3 py-1 text-xs font-bold uppercase tracking-widest text-white">
                         1ª Edición · 31 Oct &amp; 1 Nov
                     </span>
+                    <span className="mt-2 text-xs uppercase tracking-widest text-boss-gray">{SEDE_EVENTO}</span>
                     <h1 className="mt-5 font-display text-3xl uppercase tracking-wide text-white sm:text-4xl">
                         Registro de <span className="text-boss-red">Competidores</span>
                     </h1>
@@ -137,153 +130,22 @@ export default function RegistroPage() {
                         </p>
                     )}
 
-                    <form onSubmit={handleSubmit(onSubmit, onInvalid)} noValidate>
-                        <div className={isLeaving ? "animate-section-out" : "animate-section-in"}>
-                            <h2 className="mb-5 flex items-center gap-2 font-display text-lg uppercase tracking-wide text-white">
-                                <span className="h-4 w-1 bg-boss-red" />
-                                {STEPS[currentStep].title}
-                            </h2>
+                    <FormProvider {...methods}>
+                        <form onSubmit={handleSubmit(onSubmit, onInvalid)} noValidate>
+                            <div className={isLeaving ? "animate-section-out" : "animate-section-in"}>
+                                <h2 className="mb-5 flex items-center gap-2 font-display text-lg uppercase tracking-wide text-white">
+                                    <span className="h-4 w-1 bg-boss-red" />
+                                    {STEPS[currentStep].title}
+                                </h2>
 
-                            <div className="space-y-5">
-                                {currentStep === 0 && (
-                                    <>
-                                        <Field label="Nombre(s)" error={errors.nombres?.message}>
-                                            <input {...register("nombres")} className={inputClass} />
-                                        </Field>
-                                        <Field label="Apellidos" error={errors.apellidos?.message}>
-                                            <input {...register("apellidos")} className={inputClass} />
-                                        </Field>
-                                        <Field label="Nombre artístico" error={errors.nombreArtistico?.message}>
-                                            <input
-                                                {...register("nombreArtistico")}
-                                                className={inputClass}
-                                                maxLength={50}
-                                            />
-                                        </Field>
-                                        <Field label="Fecha de nacimiento" error={errors.fechaNacimiento?.message}>
-                                            <input
-                                                type="date"
-                                                {...register("fechaNacimiento")}
-                                                className={`${inputClass} [color-scheme:dark]`}
-                                            />
-                                        </Field>
-                                        <Field label="Sexo" error={errors.sexo?.message}>
-                                            <select {...register("sexo")} className={inputClass} defaultValue="">
-                                                <option value="" disabled>
-                                                    Selecciona una opción
-                                                </option>
-                                                <option value="MASCULINO">Masculino</option>
-                                                <option value="FEMENINO">Femenino</option>
-                                            </select>
-                                        </Field>
-                                    </>
-                                )}
+                                <div className="space-y-5">
+                                    {currentStep === 0 && <StepDatosPersonales />}
+                                    {currentStep === 1 && <StepCategoria />}
+                                    {currentStep === 2 && <StepContacto />}
+                                    {currentStep === 3 && <StepLegal />}
+                                    {currentStep === 4 && <StepResumen />}
+                                </div>
 
-                                {currentStep === 1 && (
-                                    <>
-                                        <Field label="Categoría" error={errors.categoria?.message}>
-                                            <select {...register("categoria")} className={inputClass} defaultValue="">
-                                                <option value="" disabled>
-                                                    Selecciona una categoría
-                                                </option>
-                                                {Object.entries(CATEGORIAS).map(([value, label]) => (
-                                                    <option key={value} value={value}>
-                                                        {label}
-                                                    </option>
-                                                ))}
-                                            </select>
-                                        </Field>
-                                        <Field label="Estado" error={errors.estado?.message}>
-                                            <select {...register("estado")} className={inputClass} defaultValue="">
-                                                <option value="" disabled>
-                                                    Selecciona un estado
-                                                </option>
-                                                {ESTADOS_MEXICO.map((estado) => (
-                                                    <option key={estado} value={estado}>
-                                                        {estado}
-                                                    </option>
-                                                ))}
-                                            </select>
-                                        </Field>
-                                        <Field label="Ciudad" error={errors.ciudad?.message}>
-                                            <input {...register("ciudad")} className={inputClass} />
-                                        </Field>
-                                    </>
-                                )}
-
-                                {currentStep === 2 && (
-                                    <>
-                                        <Field label="Correo" error={errors.correo?.message}>
-                                            <input type="email" {...register("correo")} className={inputClass} />
-                                        </Field>
-                                        <Field label="Teléfono" error={errors.telefono?.message}>
-                                            <input
-                                                {...register("telefono")}
-                                                className={inputClass}
-                                                placeholder="10 dígitos"
-                                            />
-                                        </Field>
-                                        <Field label="Instagram (opcional)" error={errors.instagram?.message}>
-                                            <input
-                                                {...register("instagram")}
-                                                className={inputClass}
-                                                placeholder="@usuario"
-                                            />
-                                        </Field>
-                                        <Field label="Academia (opcional)" error={errors.academia?.message}>
-                                            <input {...register("academia")} className={inputClass} />
-                                        </Field>
-                                        <Field label="Crew (opcional)" error={errors.crew?.message}>
-                                            <input {...register("crew")} className={inputClass} />
-                                        </Field>
-                                        <Field
-                                            label="Contacto de emergencia (obligatorio para menores de edad)"
-                                            error={errors.contactoEmergencia?.message}
-                                        >
-                                            <input {...register("contactoEmergencia")} className={inputClass} />
-                                        </Field>
-                                    </>
-                                )}
-
-                                {currentStep === 3 && (
-                                    <>
-                                        <Checkbox
-                                            label="Acepto el reglamento"
-                                            error={errors.aceptaReglamento?.message}
-                                            {...register("aceptaReglamento")}
-                                        />
-                                        <Checkbox
-                                            label="Acepto el aviso de privacidad"
-                                            error={errors.aceptaAvisoPrivacidad?.message}
-                                            {...register("aceptaAvisoPrivacidad")}
-                                        />
-                                        <Checkbox
-                                            label="Acepto el uso de mi imagen"
-                                            error={errors.aceptaUsoImagen?.message}
-                                            {...register("aceptaUsoImagen")}
-                                        />
-
-                                        <div className="mt-6 flex gap-3">
-                                            <button
-                                                type="button"
-                                                onClick={goBack}
-                                                className="w-full rounded-md border border-boss-border px-4 py-3.5 font-display text-lg uppercase tracking-wider text-foreground transition-colors hover:border-boss-red"
-                                            >
-                                                Atrás
-                                            </button>
-                                            <button
-                                                type="submit"
-                                                disabled={isSubmitting}
-                                                className="w-full rounded-md bg-boss-red px-4 py-3.5 font-display text-lg uppercase tracking-wider text-white transition-colors hover:bg-boss-red-dark disabled:cursor-not-allowed disabled:opacity-50"
-                                            >
-                                                {isSubmitting ? "Procesando..." : "Registrarme y Pagar"}
-                                            </button>
-                                        </div>
-                                    </>
-                                )}
-                            </div>
-
-                            {currentStep < STEPS.length - 1 && (
                                 <div className="mt-6 flex gap-3">
                                     {currentStep > 0 && (
                                         <button
@@ -294,17 +156,27 @@ export default function RegistroPage() {
                                             Atrás
                                         </button>
                                     )}
-                                    <button
-                                        type="button"
-                                        onClick={goNext}
-                                        className="w-full rounded-md bg-boss-red px-4 py-3.5 font-display text-lg uppercase tracking-wider text-white transition-colors hover:bg-boss-red-dark"
-                                    >
-                                        Siguiente
-                                    </button>
+                                    {esUltimoPaso ? (
+                                        <button
+                                            type="submit"
+                                            disabled={isSubmitting}
+                                            className="w-full rounded-md bg-boss-red px-4 py-3.5 font-display text-lg uppercase tracking-wider text-white transition-colors hover:bg-boss-red-dark disabled:cursor-not-allowed disabled:opacity-50"
+                                        >
+                                            {isSubmitting ? "Procesando..." : "Confirmar y Pagar"}
+                                        </button>
+                                    ) : (
+                                        <button
+                                            type="button"
+                                            onClick={goNext}
+                                            className="w-full rounded-md bg-boss-red px-4 py-3.5 font-display text-lg uppercase tracking-wider text-white transition-colors hover:bg-boss-red-dark"
+                                        >
+                                            Siguiente
+                                        </button>
+                                    )}
                                 </div>
-                            )}
-                        </div>
-                    </form>
+                            </div>
+                        </form>
+                    </FormProvider>
                 </div>
             </div>
         </main>
@@ -321,7 +193,7 @@ function StepTracker({
     onSelect: (step: number) => void;
 }) {
     return (
-        <div className="mb-8 flex items-center justify-center">
+        <div className="mb-8 flex flex-wrap items-center justify-center gap-y-2">
             {Array.from({ length: total }).map((_, i) => {
                 const isDone = i < current;
                 const isActive = i === current;
@@ -333,6 +205,7 @@ function StepTracker({
                             disabled={!isReachable}
                             onClick={() => onSelect(i)}
                             aria-label={`Ir a la sección ${i + 1}`}
+                            aria-current={isActive ? "step" : undefined}
                             className={[
                                 "flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 font-display text-sm transition-colors",
                                 isReachable ? "cursor-pointer" : "cursor-not-allowed",
@@ -356,34 +229,5 @@ function StepTracker({
                 );
             })}
         </div>
-    );
-}
-
-function Field({ label, error, children }: { label: string; error?: string; children: ReactNode }) {
-    return (
-        <label className="block">
-            <span className="mb-1.5 flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-boss-gray">
-                <span className="h-3 w-[3px] shrink-0 bg-boss-red" />
-                {label}
-            </span>
-            {children}
-            {error && <span className="mt-1 block text-xs font-medium text-red-400">{error}</span>}
-        </label>
-    );
-}
-
-function Checkbox({
-    label,
-    error,
-    ...props
-}: InputHTMLAttributes<HTMLInputElement> & { label: string; error?: string }) {
-    return (
-        <label className="flex items-start gap-2">
-            <input type="checkbox" className="mt-1 h-4 w-4 accent-boss-red" {...props} />
-            <span className="text-sm text-foreground">
-                {label}
-                {error && <span className="mt-1 block text-xs font-medium text-red-400">{error}</span>}
-            </span>
-        </label>
     );
 }

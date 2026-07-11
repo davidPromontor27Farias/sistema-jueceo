@@ -1,11 +1,21 @@
 import {z} from "zod";
-import { RANGOS_EDAD_POR_CATEGORIA, ESTADOS_MEXICO, type Categoria } from "../config/catalog";
+import { REGLAS_POR_CATEGORIA, ESTADOS_MEXICO, type Categoria } from "../config/catalog";
 
-const SOLO_LETRAS = /^[A-Za-zÁÉÍÓÚÑáéíóúñ\s]+$/;
+const SOLO_LETRAS = /^[A-Za-zÁÉÍÓÚÑáéíóúñ'\-\s]+$/;
 const TELEFONO_10_DIGITOS = /^\d{10}$/;
 const INSTAGRAM_USUARIO = /^@[A-Za-z0-9._]{1,30}$/;
+const CLOUDINARY_URL = /^https:\/\/res\.cloudinary\.com\//;
 
-const CATEGORIAS = Object.keys(RANGOS_EDAD_POR_CATEGORIA) as [Categoria, ...Categoria[]];
+const CATEGORIAS = Object.keys(REGLAS_POR_CATEGORIA) as [Categoria, ...Categoria[]];
+const PAQUETES_BASE = [
+    "COMPETIDOR",
+    "PUBLICO_GENERAL",
+    "VIP_EXPERIENCE",
+    "BOSS_EXPERIENCE",
+    "BOSS_VIP",
+    "PRO_PACKAGE",
+    "SOLO_WORKSHOPS",
+] as const;
 
 
 function calcularEdad(fechaNacimiento: Date): number{
@@ -16,7 +26,7 @@ function calcularEdad(fechaNacimiento: Date): number{
 
     if(noHaCumplidoAnios) edad --;
     return edad;
-    
+
 }
 
 export const registrationSchema = z
@@ -27,34 +37,43 @@ export const registrationSchema = z
         fechaNacimiento: z.coerce.date(),
         categoria: z.enum(CATEGORIAS),
         sexo: z.enum(["MASCULINO", "FEMENINO"]),
+        nacionalidad: z.string().trim().min(1),
         estado: z.enum(ESTADOS_MEXICO),
         ciudad: z.string().trim().min(1),
         correo: z.string().trim().email(),
         telefono: z.string().regex(TELEFONO_10_DIGITOS, "Debe tener 10 dígitos"),
         instagram: z.string().regex(INSTAGRAM_USUARIO, "Formato @usuario").optional(),
-        academia: z.string().trim().optional(),
-        crew: z.string().trim().optional(),
+        academiaCrew: z.string().trim().optional(),
         contactoEmergencia: z.string().trim().optional(),
+        fotoUrl: z.string().url().regex(CLOUDINARY_URL, "La foto debe subirse desde el formulario").optional(),
+        paqueteBase: z.enum(PAQUETES_BASE),
+        workshopsSeleccionados: z.array(z.number().int().min(1).max(3)).max(3).default([]),
         aceptaReglamento: z.literal(true),
         aceptaAvisoPrivacidad: z.literal(true),
-        aceptaUsoImagen: z.literal(true),
     })
     .superRefine((data, ctx) => {
         const edad = calcularEdad(data.fechaNacimiento);
-        const rango = RANGOS_EDAD_POR_CATEGORIA[data.categoria];
+        const regla = REGLAS_POR_CATEGORIA[data.categoria];
 
-        if (rango.minEdad !== null && edad < rango.minEdad) {
+        if (regla.minEdad !== null && edad < regla.minEdad) {
             ctx.addIssue({
                 code: "custom",
                 path: ["categoria"],
-                message: `La categoría requiere una edad mínima de ${rango.minEdad} años`,
+                message: `La categoría requiere una edad mínima de ${regla.minEdad} años`,
             });
         }
-        if (rango.maxEdad !== null && edad > rango.maxEdad) {
+        if (regla.maxEdad !== null && edad > regla.maxEdad) {
             ctx.addIssue({
                 code: "custom",
                 path: ["categoria"],
-                message: `La categoría requiere una edad máxima de ${rango.maxEdad} años`,
+                message: `La categoría requiere una edad máxima de ${regla.maxEdad} años`,
+            });
+        }
+        if (regla.sexoPermitido !== null && !regla.sexoPermitido.includes(data.sexo)) {
+            ctx.addIssue({
+                code: "custom",
+                path: ["categoria"],
+                message: "Esta categoría no está disponible para el sexo seleccionado",
             });
         }
         if (edad < 18 && !data.contactoEmergencia) {

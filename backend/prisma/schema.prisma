@@ -20,6 +20,7 @@ enum Categoria {
   BGIRLS
   BBOYS
   PUBLICO_GENERAL
+  OPEN_STYLE_1V1
 }
 
 enum Sexo {
@@ -42,6 +43,19 @@ enum EstatusPago {
   REEMBOLSADO
 }
 
+// Paquete base elegido por el registrante; los workshops (add-on) se
+// guardan aparte en workshopsSeleccionados. Ver backend/src/config/catalog.ts
+// para la tabla de precios y la función que calcula el total.
+enum PaqueteBase {
+  COMPETIDOR
+  PUBLICO_GENERAL
+  VIP_EXPERIENCE
+  BOSS_EXPERIENCE
+  BOSS_VIP
+  PRO_PACKAGE
+  SOLO_WORKSHOPS
+}
+
 model Registration {
   id                    String      @id @default(uuid())
 
@@ -57,17 +71,20 @@ model Registration {
   correo                String      @unique
   telefono              String
   instagram             String?
-  academia              String?
-  crew                  String?
+  academiaCrew          String?
   contactoEmergencia    String?
+  nacionalidad          String
+  fotoUrl               String?
 
   // Consentimientos legales
   aceptaReglamento      Boolean     @default(false)
   aceptaAvisoPrivacidad Boolean     @default(false)
   aceptaUsoImagen       Boolean     @default(false)
 
-  // Boleto y pago
+  // Boleto, paquete y pago
   tipoBoleto            TipoBoleto
+  paqueteBase           PaqueteBase
+  workshopsSeleccionados Int[]      @default([])
   precioMXNCentavos     Int
   estatusPago           EstatusPago @default(PENDIENTE)
   stripeSessionId       String?     @unique
@@ -77,8 +94,14 @@ model Registration {
   qrToken               String?     @unique
   qrEscaneadoEn         DateTime?
 
+  // ID fijo de competidor (ej. "BB-023"), asignado al confirmarse el pago.
+  // Se reutiliza entre años para el mismo correo, ver backend/src/routes/stripeWebhook.ts
+  competidorId          String?     @unique
+
   createdAt             DateTime    @default(now())
   updatedAt             DateTime    @updatedAt
 
+  @@index([estatusPago])
+  @@index([categoria])
   @@map("registrations")
 }

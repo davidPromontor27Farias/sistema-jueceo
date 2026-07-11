@@ -1,6 +1,11 @@
 import { Router } from "express";
 import { registrationSchema } from "../types/registration";
-import { PRECIO_MXN_CENTAVOS_POR_TIPO_BOLETO, tipoBoletoPorCategoria } from "../config/catalog";
+import {
+    calcularPrecioTotal,
+    tipoBoletoPorCategoria,
+    CATEGORIAS_LABEL,
+    PAQUETES_BASE_LABEL,
+} from "../config/catalog";
 import { prisma } from "../lib/prisma";
 import { stripe } from "../lib/stripe";
 import { generarQrDataUrl } from "../lib/qr";
@@ -16,6 +21,8 @@ registrationsRouter.get("/by-session/:sessionId", async (req, res) => {
         select: {
             nombreArtistico: true,
             tipoBoleto: true,
+            categoria: true,
+            competidorId: true,
             estatusPago: true,
             qrToken: true,
         },
@@ -35,6 +42,9 @@ registrationsRouter.get("/by-session/:sessionId", async (req, res) => {
         estatusPago: registration.estatusPago,
         nombreArtistico: registration.nombreArtistico,
         tipoBoleto: registration.tipoBoleto,
+        categoria: registration.categoria,
+        categoriaLabel: CATEGORIAS_LABEL[registration.categoria],
+        competidorId: registration.competidorId,
         qrDataUrl,
     });
 });
@@ -50,7 +60,7 @@ registrationsRouter.post("/", async (req, res) => {
 
     const data = parsed.data;
     const tipoBoleto = tipoBoletoPorCategoria(data.categoria);
-    const precioMXNCentavos = PRECIO_MXN_CENTAVOS_POR_TIPO_BOLETO[tipoBoleto];
+    const precioMXNCentavos = calcularPrecioTotal(data.paqueteBase, data.workshopsSeleccionados);
 
     let registrationId: string;
     try{
@@ -62,19 +72,22 @@ registrationsRouter.post("/", async (req, res) => {
                 fechaNacimiento: data.fechaNacimiento,
                 categoria: data.categoria,
                 sexo: data.sexo,
+                nacionalidad: data.nacionalidad,
                 estado: data.estado,
                 ciudad: data.ciudad,
                 correo: data.correo,
                 telefono: data.telefono,
                 instagram: data.instagram ?? null,
-                academia: data.academia ?? null,
-                crew: data.crew ?? null,
+                academiaCrew: data.academiaCrew ?? null,
                 contactoEmergencia: data.contactoEmergencia ?? null,
+                fotoUrl: data.fotoUrl ?? null,
                 aceptaReglamento: data.aceptaReglamento,
                 aceptaAvisoPrivacidad: data.aceptaAvisoPrivacidad,
-                aceptaUsoImagen: data.aceptaUsoImagen,
-                tipoBoleto, 
-                precioMXNCentavos
+                aceptaUsoImagen: data.aceptaAvisoPrivacidad,
+                tipoBoleto,
+                paqueteBase: data.paqueteBase,
+                workshopsSeleccionados: data.workshopsSeleccionados,
+                precioMXNCentavos,
             },
         });
         registrationId = registration.id;
@@ -88,6 +101,7 @@ registrationsRouter.post("/", async (req, res) => {
     }
 
     try{
+        const nombreProducto = `${PAQUETES_BASE_LABEL[data.paqueteBase]} — ${CATEGORIAS_LABEL[data.categoria]}`;
         const session = await stripe.checkout.sessions.create({
             mode: "payment",
             customer_email: data.correo,
@@ -97,7 +111,7 @@ registrationsRouter.post("/", async (req, res) => {
                         currency: "mxn",
                         unit_amount: precioMXNCentavos,
                         product_data: {
-                            name: `Inscripcion - ${tipoBoleto}`,
+                            name: nombreProducto,
                         },
                     },
                     quantity: 1,
