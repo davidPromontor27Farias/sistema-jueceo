@@ -107,12 +107,12 @@ export default function RegistroPage() {
                         <Image
                             src="/the-boss-logo.png"
                             alt="THE BOSS — Breaking Battles"
-                            width={200}
-                            height={166}
+                            width={300}
+                            height={200}
                             priority
                             className="drop-shadow-[0_0_25px_rgba(226,9,26,0.25)]"
                         />
-                        <span className="mt-4 inline-block rounded bg-boss-red px-3 py-1 text-xs font-bold uppercase tracking-widest text-white">
+                        <span className="mt-4 text-2xl inline-block rounded bg-boss-red px-3 py-1 font-bold uppercase tracking-widest text-white">
                             1ª Edición · 31 Oct &amp; 1 Nov
                         </span>
                         <span className="mt-2 text-xs uppercase tracking-widest text-boss-gray">{SEDE_EVENTO}</span>
@@ -212,24 +212,24 @@ function BrandPanel() {
                 />
 
                 <div className="mt-4 flex flex-wrap items-center gap-2.5">
-                    <span className="inline-block rounded bg-boss-red px-2.5 py-1 text-xs font-bold uppercase tracking-widest text-white">
+                    <span className="inline-block rounded bg-boss-red px-2.5 py-1 text-3xl font-bold uppercase tracking-widest text-white">
                         1ª Edición · 31 Oct &amp; 1 Nov
                     </span>
-                    <span className="text-xs uppercase tracking-widest text-boss-gray">{SEDE_EVENTO}</span>
+                    <span className="text-xl font-bold uppercase tracking-widest text-boss-gray">{SEDE_EVENTO}</span>
                 </div>
 
                 <h1 className="mt-5 font-display text-2xl uppercase leading-[1.05] tracking-wide text-white xl:text-3xl">
                     Sé parte de <span className="text-boss-red">la historia</span> del breaking en México
                 </h1>
 
-                <p className="mt-3 max-w-md text-sm text-boss-gray">
+                <p className="mt-3 max-w-md text-sm text-boss-gray text-xl">
                     Más transparencia. Más respeto. <span className="text-boss-green">Más breaking.</span> Regístrate
                     y compite en la primera edición de THE BOSS.
                 </p>
 
                 <ul className="mt-4 space-y-1.5">
                     {RAZONES_PARA_INSCRIBIRTE.map((razon) => (
-                        <li key={razon} className="flex items-start gap-2.5 text-xs text-foreground">
+                        <li key={razon} className="flex items-start gap-2.5 text-middle] text-foreground">
                             <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-boss-red/20 text-[10px] text-boss-red">
                                 ✓
                             </span>
