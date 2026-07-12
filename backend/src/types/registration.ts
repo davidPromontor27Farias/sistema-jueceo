@@ -45,11 +45,17 @@ export const registrationSchema = z
         instagram: z.string().regex(INSTAGRAM_USUARIO, "Formato @usuario").optional(),
         academiaCrew: z.string().trim().optional(),
         contactoEmergencia: z.string().trim().optional(),
-        fotoUrl: z.string().url().regex(CLOUDINARY_URL, "La foto debe subirse desde el formulario").optional(),
+        fotoUrl: z
+            .string()
+            .url()
+            .regex(CLOUDINARY_URL, "La foto debe subirse desde el formulario")
+            .optional()
+            .or(z.literal("")),
         paqueteBase: z.enum(PAQUETES_BASE),
         workshopsSeleccionados: z.array(z.number().int().min(1).max(3)).max(3).default([]),
         aceptaReglamento: z.literal(true),
         aceptaAvisoPrivacidad: z.literal(true),
+        aceptaPoliticaCancelacion: z.literal(true),
     })
     .superRefine((data, ctx) => {
         const edad = calcularEdad(data.fechaNacimiento);
@@ -81,6 +87,13 @@ export const registrationSchema = z
                 code: "custom",
                 path: ["contactoEmergencia"],
                 message: "El contacto de emergencia es obligatorio para menores de edad",
+            });
+        }
+        if (data.paqueteBase !== "PUBLICO_GENERAL" && !data.fotoUrl) {
+            ctx.addIssue({
+                code: "custom",
+                path: ["fotoUrl"],
+                message: "Falta la foto",
             });
         }
     });

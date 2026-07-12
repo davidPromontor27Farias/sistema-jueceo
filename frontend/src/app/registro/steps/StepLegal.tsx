@@ -34,6 +34,23 @@ export function StepLegal() {
                 error={errors.aceptaAvisoPrivacidad?.message}
                 {...register("aceptaAvisoPrivacidad")}
             />
+            <Checkbox
+                label={
+                    <>
+                        Acepto la{" "}
+                        <a
+                            href="/politica-cancelacion"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-boss-green underline"
+                        >
+                            Política de Cancelación
+                        </a>
+                    </>
+                }
+                error={errors.aceptaPoliticaCancelacion?.message}
+                {...register("aceptaPoliticaCancelacion")}
+            />
         </>
     );
 }

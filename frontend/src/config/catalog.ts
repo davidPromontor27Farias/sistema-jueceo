@@ -93,6 +93,16 @@ export const PAQUETES_BASE: Record<PaqueteBase, string> = {
     SOLO_WORKSHOPS: "Training Pass",
 };
 
+export const PAQUETES_BASE_DESCRIPCION: Record<PaqueteBase, string> = {
+    COMPETIDOR: "Incluye: Competencia.",
+    PUBLICO_GENERAL: "Entrada como espectador.",
+    VIP_EXPERIENCE: "Entrada / Meet & Greet / Foto / Lugar preferente / Bebida (no alcohólica).",
+    BOSS_EXPERIENCE: "Incluye: Competencia + los 3 workshops.",
+    BOSS_VIP: "Entrada rápida / Fila preferencial / Foto profesional / Autógrafo / Poster Oficial / Sticker / Lanyard VIP / Zona preferencial durante workshops / Meet & Greet.",
+    PRO_PACKAGE: "Competencia / 3 Workshops / Meet & Greet / Foto profesional / Fila rápida / Poster Oficial / Lanyard VIP / Zona preferencial / Playera Oficial / Bebida (no alcohólica).",
+    SOLO_WORKSHOPS: "Solo workshops, sin competencia: elige 1, 2 o los 3.",
+};
+
 // Debe coincidir exactamente con backend/src/config/catalog.ts
 // PENDIENTE: confirmar con el cliente la matriz completa de reglas sexo+edad.
 export const REGLAS_POR_CATEGORIA: Record<

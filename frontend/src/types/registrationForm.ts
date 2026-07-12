@@ -48,11 +48,12 @@ export const registrationFormSchema = z
         instagram: z.string().regex(INSTAGRAM_USUARIO, "Formato @usuario").optional().or(z.literal("")),
         academiaCrew: z.string().trim().optional(),
         contactoEmergencia: z.string().trim().optional(),
-        fotoUrl: z.string().url("Sube tu foto para continuar").optional(),
+        fotoUrl: z.string().url("Sube tu foto para continuar").optional().or(z.literal("")),
         paqueteBase: z.enum(PAQUETES_BASE_KEYS, { message: "Selecciona un paquete" }),
         workshopsSeleccionados: z.array(z.number().int().min(1).max(3)).max(3).default([]),
-        aceptaReglamento: z.literal(true, { message: "Debes aceptar el reglamento" }),
-        aceptaAvisoPrivacidad: z.literal(true, { message: "Debes aceptar el aviso de privacidad" }),
+        aceptaReglamento: z.boolean().optional(),
+        aceptaAvisoPrivacidad: z.boolean().optional(),
+        aceptaPoliticaCancelacion: z.boolean().optional(),
     })
     .superRefine((data, ctx) => {
         const edad = calcularEdad(data.fechaNacimiento);
@@ -84,6 +85,30 @@ export const registrationFormSchema = z
                 code: "custom",
                 path: ["contactoEmergencia"],
                 message: "El contacto de emergencia es obligatorio para menores de edad",
+            });
+        }
+        if (data.paqueteBase !== "PUBLICO_GENERAL" && !data.fotoUrl) {
+            ctx.addIssue({
+                code: "custom",
+                path: ["fotoUrl"],
+                message: "Sube tu foto para continuar",
+            });
+        }
+        if (!data.aceptaReglamento) {
+            ctx.addIssue({ code: "custom", path: ["aceptaReglamento"], message: "Debes aceptar el reglamento" });
+        }
+        if (!data.aceptaAvisoPrivacidad) {
+            ctx.addIssue({
+                code: "custom",
+                path: ["aceptaAvisoPrivacidad"],
+                message: "Debes aceptar el aviso de privacidad",
+            });
+        }
+        if (!data.aceptaPoliticaCancelacion) {
+            ctx.addIssue({
+                code: "custom",
+                path: ["aceptaPoliticaCancelacion"],
+                message: "Debes aceptar la política de cancelación",
             });
         }
     });

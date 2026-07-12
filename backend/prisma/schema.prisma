@@ -80,6 +80,7 @@ model Registration {
   aceptaReglamento      Boolean     @default(false)
   aceptaAvisoPrivacidad Boolean     @default(false)
   aceptaUsoImagen       Boolean     @default(false)
+  aceptaPoliticaCancelacion Boolean @default(false)
 
   // Boleto, paquete y pago
   tipoBoleto            TipoBoleto

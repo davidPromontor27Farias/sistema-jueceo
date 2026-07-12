@@ -53,7 +53,7 @@ export function StepDatosPersonales() {
             </Field>
             <Field label="Sexo" error={errors.sexo?.message}>
                 <select {...register("sexo")} className={inputClass} defaultValue="">
-                    <option value="" disabled>
+                    <option value="">
                         Selecciona una opción
                     </option>
                     <option value="MASCULINO">Masculino</option>
@@ -61,6 +61,9 @@ export function StepDatosPersonales() {
                 </select>
             </Field>
             <Field label="Nacionalidad" error={errors.nacionalidad?.message}>
+                {/* nacionalidad se controla vía setValue (select + input "otra"); este input
+                    oculto registra el campo en react-hook-form para que trigger()/validación lo detecte. */}
+                <input type="hidden" {...register("nacionalidad")} />
                 <select
                     className={inputClass}
                     value={otraNacionalidad ? "Otra" : (nacionalidad ?? "")}
@@ -75,7 +78,7 @@ export function StepDatosPersonales() {
                         }
                     }}
                 >
-                    <option value="" disabled>
+                    <option value="">
                         Selecciona una opción
                     </option>
                     {NACIONALIDADES.map((n) => (
@@ -86,7 +89,8 @@ export function StepDatosPersonales() {
                 </select>
                 {otraNacionalidad && (
                     <input
-                        {...register("nacionalidad")}
+                        value={nacionalidad ?? ""}
+                        onChange={(e) => setValue("nacionalidad", e.target.value, { shouldValidate: true })}
                         className={`${inputClass} mt-2`}
                         placeholder="Escribe tu nacionalidad"
                         autoFocus

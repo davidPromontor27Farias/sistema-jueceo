@@ -84,6 +84,7 @@ registrationsRouter.post("/", async (req, res) => {
                 aceptaReglamento: data.aceptaReglamento,
                 aceptaAvisoPrivacidad: data.aceptaAvisoPrivacidad,
                 aceptaUsoImagen: data.aceptaAvisoPrivacidad,
+                aceptaPoliticaCancelacion: data.aceptaPoliticaCancelacion,
                 tipoBoleto,
                 paqueteBase: data.paqueteBase,
                 workshopsSeleccionados: data.workshopsSeleccionados,

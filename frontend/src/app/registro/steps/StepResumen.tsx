@@ -37,9 +37,9 @@ export function StepResumen() {
                 </div>
             </div>
 
-            <p className="mt-6 text-center text-sm text-boss-gray">
+            <p className="mt-6 text-center font-display text-xl uppercase leading-snug tracking-wide text-white sm:text-2xl">
                 Estás a un paso de formar parte de la primera edición de{" "}
-                <span className="text-boss-green">&ldquo;THE BOSS&rdquo;</span>, el evento que establecerá un nuevo
+                <span className="text-boss-red">&ldquo;THE BOSS&rdquo;</span>, el evento que establecerá un nuevo
                 estándar para el breaking en México.
             </p>
         </>

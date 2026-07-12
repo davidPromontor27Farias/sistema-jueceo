@@ -7,6 +7,7 @@ import {
     REGLAS_POR_CATEGORIA,
     ACADEMIAS_CONOCIDAS,
     PAQUETES_BASE,
+    PAQUETES_BASE_DESCRIPCION,
     PRECIO_MXN_CENTAVOS_POR_PAQUETE_BASE,
     PRECIO_MXN_CENTAVOS_WORKSHOP_INDIVIDUAL,
     PRECIO_MXN_CENTAVOS_WORKSHOP_BUNDLE_3,
@@ -61,7 +62,7 @@ export function StepCategoria() {
         <>
             <Field label="Categoría" error={errors.categoria?.message}>
                 <select {...register("categoria")} className={inputClass} defaultValue="">
-                    <option value="" disabled>
+                    <option value="">
                         Selecciona una categoría
                     </option>
                     {Object.entries(CATEGORIAS).map(([value, label]) => (
@@ -75,7 +76,7 @@ export function StepCategoria() {
 
             <Field label="Estado" error={errors.estado?.message}>
                 <select {...register("estado")} className={inputClass} defaultValue="">
-                    <option value="" disabled>
+                    <option value="">
                         Selecciona un estado
                     </option>
                     {ESTADOS_MEXICO.map((estado) => (
@@ -127,15 +128,18 @@ export function StepCategoria() {
                 <h3 className="mb-3 text-xs font-semibold uppercase tracking-widest text-boss-gray">
                     Costos y paquetes
                 </h3>
-                <ul className="space-y-1.5 text-sm text-foreground">
+                <ul className="space-y-3 text-sm text-foreground">
                     {(Object.entries(PAQUETES_BASE) as [PaqueteBase, string][]).map(([key, label]) => (
-                        <li key={key} className="flex justify-between gap-3">
-                            <span>{label}{key === "SOLO_WORKSHOPS" ? " (desde)" : ""}</span>
-                            <span className="text-boss-green">
-                                {key === "SOLO_WORKSHOPS"
-                                    ? formatearMXN(PRECIO_MXN_CENTAVOS_WORKSHOP_INDIVIDUAL)
-                                    : formatearMXN(PRECIO_MXN_CENTAVOS_POR_PAQUETE_BASE[key])}
-                            </span>
+                        <li key={key}>
+                            <div className="flex justify-between gap-3">
+                                <span>{label}{key === "SOLO_WORKSHOPS" ? " (desde)" : ""}</span>
+                                <span className="text-boss-green">
+                                    {key === "SOLO_WORKSHOPS"
+                                        ? formatearMXN(PRECIO_MXN_CENTAVOS_WORKSHOP_INDIVIDUAL)
+                                        : formatearMXN(PRECIO_MXN_CENTAVOS_POR_PAQUETE_BASE[key])}
+                                </span>
+                            </div>
+                            <p className="text-xs text-boss-gray">{PAQUETES_BASE_DESCRIPCION[key]}</p>
                         </li>
                     ))}
                     <li className="pt-1 text-xs text-boss-gray">
@@ -147,7 +151,7 @@ export function StepCategoria() {
 
             <Field label="Paquete" error={errors.paqueteBase?.message}>
                 <select {...register("paqueteBase")} className={inputClass} defaultValue="">
-                    <option value="" disabled>
+                    <option value="">
                         Selecciona un paquete
                     </option>
                     {(Object.entries(PAQUETES_BASE) as [PaqueteBase, string][]).map(([value, label]) => (
@@ -156,6 +160,7 @@ export function StepCategoria() {
                         </option>
                     ))}
                 </select>
+                {paqueteBase && <p className="mt-1.5 text-xs text-boss-gray">{PAQUETES_BASE_DESCRIPCION[paqueteBase]}</p>}
             </Field>
 
             {permiteWorkshopsAdicionales && (
