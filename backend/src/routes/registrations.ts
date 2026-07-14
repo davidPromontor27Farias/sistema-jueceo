@@ -9,11 +9,12 @@ import {
 import { prisma } from "../lib/prisma";
 import { stripe } from "../lib/stripe";
 import { generarQrDataUrl } from "../lib/qr";
+import { registrationCreateLimiter, registrationStatusLimiter } from "../lib/rateLimit";
 
 
 export const registrationsRouter = Router();
 
-registrationsRouter.get("/by-session/:sessionId", async (req, res) => {
+registrationsRouter.get("/by-session/:sessionId", registrationStatusLimiter, async (req, res) => {
     const { sessionId } = req.params;
 
     const registration = await prisma.registration.findUnique({
@@ -49,7 +50,7 @@ registrationsRouter.get("/by-session/:sessionId", async (req, res) => {
     });
 });
 
-registrationsRouter.post("/", async (req, res) => {
+registrationsRouter.post("/", registrationCreateLimiter, async (req, res) => {
     const parsed = registrationSchema.safeParse(req.body);
 
     if(!parsed.success){

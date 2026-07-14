@@ -1,11 +1,16 @@
 import { Router } from "express";
 import { prisma } from "../lib/prisma";
+import { accessVerifyLimiter } from "../lib/rateLimit";
+
+if (!process.env.STAFF_API_KEY) {
+    throw new Error("Falta STAFF_API_KEY en las variables de entorno");
+}
+const STAFF_API_KEY = process.env.STAFF_API_KEY;
 
 export const accessRouter = Router();
 
-accessRouter.post("/verify", async (req, res) => {
-    const staffKey = process.env.STAFF_API_KEY;
-    if (staffKey && req.headers["x-staff-key"] !== staffKey) {
+accessRouter.post("/verify", accessVerifyLimiter, async (req, res) => {
+    if (req.headers["x-staff-key"] !== STAFF_API_KEY) {
         return res.status(401).json({ error: "No autorizado" });
     }
 
