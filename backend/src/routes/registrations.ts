@@ -16,6 +16,9 @@ export const registrationsRouter = Router();
 
 registrationsRouter.get("/by-session/:sessionId", registrationStatusLimiter, async (req, res) => {
     const { sessionId } = req.params;
+    if (typeof sessionId !== "string") {
+        return res.status(400).json({ error: "Falta sessionId" });
+    }
 
     const registration = await prisma.registration.findUnique({
         where: { stripeSessionId: sessionId },
