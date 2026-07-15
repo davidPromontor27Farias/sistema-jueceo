@@ -1,5 +1,5 @@
 import {z} from "zod";
-import { REGLAS_POR_CATEGORIA, ESTADOS_MEXICO, type Categoria } from "../config/catalog";
+import { REGLAS_POR_CATEGORIA, ESTADOS_MEXICO, tipoBoletoPorCategoria, type Categoria } from "../config/catalog";
 
 const SOLO_LETRAS = /^[A-Za-zÁÉÍÓÚÑáéíóúñ'\-\s]+$/;
 const TELEFONO_10_DIGITOS = /^\d{10}$/;
@@ -13,7 +13,6 @@ const PAQUETES_BASE = [
     "VIP_EXPERIENCE",
     "BOSS_EXPERIENCE",
     "BOSS_VIP",
-    "PRO_PACKAGE",
     "SOLO_WORKSHOPS",
 ] as const;
 
@@ -33,7 +32,7 @@ export const registrationSchema = z
     .object({
         nombres: z.string().trim().min(1).regex(SOLO_LETRAS, "Solo letras"),
         apellidos: z.string().trim().min(1).regex(SOLO_LETRAS, "Solo letras"),
-        nombreArtistico: z.string().trim().min(1).max(50),
+        nombreArtistico: z.string().trim().max(50).optional().or(z.literal("")),
         fechaNacimiento: z.coerce.date(),
         categoria: z.enum(CATEGORIAS),
         sexo: z.enum(["MASCULINO", "FEMENINO"]),
@@ -53,7 +52,8 @@ export const registrationSchema = z
             .or(z.literal("")),
         paqueteBase: z.enum(PAQUETES_BASE),
         workshopsSeleccionados: z.array(z.number().int().min(1).max(3)).max(3).default([]),
-        aceptaReglamento: z.literal(true),
+        agregarOpenStyle: z.boolean().default(false),
+        aceptaReglamento: z.boolean().default(false),
         aceptaAvisoPrivacidad: z.literal(true),
         aceptaPoliticaCancelacion: z.literal(true),
     })
@@ -61,6 +61,20 @@ export const registrationSchema = z
         const edad = calcularEdad(data.fechaNacimiento);
         const regla = REGLAS_POR_CATEGORIA[data.categoria];
 
+        if (tipoBoletoPorCategoria(data.categoria) !== "GENERAL" && !data.aceptaReglamento) {
+            ctx.addIssue({
+                code: "custom",
+                path: ["aceptaReglamento"],
+                message: "Debes aceptar el reglamento",
+            });
+        }
+        if (tipoBoletoPorCategoria(data.categoria) !== "GENERAL" && !data.nombreArtistico) {
+            ctx.addIssue({
+                code: "custom",
+                path: ["nombreArtistico"],
+                message: "Falta el nombre de competidor (Bboy/Bgirl name)",
+            });
+        }
         if (regla.minEdad !== null && edad < regla.minEdad) {
             ctx.addIssue({
                 code: "custom",
@@ -94,6 +108,13 @@ export const registrationSchema = z
                 code: "custom",
                 path: ["fotoUrl"],
                 message: "Falta la foto",
+            });
+        }
+        if (data.agregarOpenStyle && (data.categoria === "OPEN_STYLE_1V1" || data.categoria === "PUBLICO_GENERAL")) {
+            ctx.addIssue({
+                code: "custom",
+                path: ["agregarOpenStyle"],
+                message: "El extra de Open Style no aplica a esta categoría",
             });
         }
     });

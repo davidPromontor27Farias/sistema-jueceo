@@ -19,25 +19,58 @@ export function StepDatosPersonales() {
         register,
         watch,
         setValue,
+        resetField,
         formState: { errors },
     } = useFormContext<RegistrationFormValues>();
 
     const nacionalidad = watch("nacionalidad");
+    const tipoParticipacion = watch("tipoParticipacion");
+    const esPublico = tipoParticipacion === "PUBLICO";
     const [otraNacionalidad, setOtraNacionalidad] = useState(
         () => nacionalidad !== undefined && nacionalidad !== "" && !(NACIONALIDADES as readonly string[]).includes(nacionalidad),
     );
 
+    // Al cambiar cómo participa la persona, limpiamos categoría/paquete/extras
+    // ya elegidos: las opciones válidas dependen de si es competidor o público.
+    const alCambiarTipoParticipacion = (valor: string) => {
+        if (valor === "PUBLICO") {
+            setValue("categoria", "PUBLICO_GENERAL", { shouldValidate: true });
+            resetField("nombreArtistico");
+        } else {
+            resetField("categoria");
+        }
+        resetField("paqueteBase");
+        resetField("workshopsSeleccionados");
+        resetField("agregarOpenStyle");
+    };
+
     return (
         <>
+            <Field label="¿Cómo participarás en The Boss?" error={errors.tipoParticipacion?.message}>
+                <select
+                    {...register("tipoParticipacion", {
+                        onChange: (e) => alCambiarTipoParticipacion(e.target.value),
+                    })}
+                    className={inputClass}
+                    defaultValue=""
+                >
+                    <option value="">Selecciona una opción</option>
+                    <option value="COMPETIDOR">Soy Competidor</option>
+                    <option value="PUBLICO">Voy como Público</option>
+                </select>
+            </Field>
+
             <Field label="Nombre(s)" error={errors.nombres?.message}>
                 <input {...register("nombres")} className={inputClass} />
             </Field>
             <Field label="Apellidos" error={errors.apellidos?.message}>
                 <input {...register("apellidos")} className={inputClass} />
             </Field>
-            <Field label="Bboy / Bgirl Name" error={errors.nombreArtistico?.message}>
-                <input {...register("nombreArtistico")} className={inputClass} maxLength={50} />
-            </Field>
+            {!esPublico && (
+                <Field label="Bboy / Bgirl Name" error={errors.nombreArtistico?.message}>
+                    <input {...register("nombreArtistico")} className={inputClass} maxLength={50} />
+                </Field>
+            )}
             <Field
                 label="Fecha de nacimiento"
                 error={errors.fechaNacimiento?.message}

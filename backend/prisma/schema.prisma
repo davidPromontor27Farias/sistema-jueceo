@@ -46,13 +46,13 @@ enum EstatusPago {
 // Paquete base elegido por el registrante; los workshops (add-on) se
 // guardan aparte en workshopsSeleccionados. Ver backend/src/config/catalog.ts
 // para la tabla de precios y la función que calcula el total.
+// NOTA: PRO_PACKAGE se fusionó con BOSS_VIP (mismo contenido, ver Mejoras_v3).
 enum PaqueteBase {
   COMPETIDOR
   PUBLICO_GENERAL
   VIP_EXPERIENCE
   BOSS_EXPERIENCE
   BOSS_VIP
-  PRO_PACKAGE
   SOLO_WORKSHOPS
 }
 
@@ -86,6 +86,7 @@ model Registration {
   tipoBoleto            TipoBoleto
   paqueteBase           PaqueteBase
   workshopsSeleccionados Int[]      @default([])
+  agregarOpenStyle      Boolean     @default(false)
   precioMXNCentavos     Int
   estatusPago           EstatusPago @default(PENDIENTE)
   stripeSessionId       String?     @unique

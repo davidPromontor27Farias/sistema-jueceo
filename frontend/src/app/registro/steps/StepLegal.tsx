@@ -5,23 +5,28 @@ import type { RegistrationFormValues } from "@/types/registrationForm";
 export function StepLegal() {
     const {
         register,
+        watch,
         formState: { errors },
     } = useFormContext<RegistrationFormValues>();
 
+    const esPublico = watch("tipoParticipacion") === "PUBLICO";
+
     return (
         <>
-            <Checkbox
-                label={
-                    <>
-                        Acepto el{" "}
-                        <a href="/reglamento" target="_blank" rel="noopener noreferrer" className="text-boss-green underline">
-                            Reglamento Oficial
-                        </a>
-                    </>
-                }
-                error={errors.aceptaReglamento?.message}
-                {...register("aceptaReglamento")}
-            />
+            {!esPublico && (
+                <Checkbox
+                    label={
+                        <>
+                            Acepto el{" "}
+                            <a href="/reglamento" target="_blank" rel="noopener noreferrer" className="text-boss-green underline">
+                                Reglamento Oficial
+                            </a>
+                        </>
+                    }
+                    error={errors.aceptaReglamento?.message}
+                    {...register("aceptaReglamento")}
+                />
+            )}
             <Checkbox
                 label={
                     <>

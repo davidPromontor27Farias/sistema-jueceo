@@ -1,10 +1,12 @@
 import { useFormContext } from "react-hook-form";
-import { CATEGORIAS, calcularPrecioTotal, formatearMXN } from "@/config/catalog";
+import Image from "next/image";
+import { CATEGORIAS, calcularPrecioTotal, formatearMXN, preventaVigentePorFecha } from "@/config/catalog";
 import type { RegistrationFormValues } from "@/types/registrationForm";
 
 export function StepResumen() {
     const { watch } = useFormContext<RegistrationFormValues>();
 
+    const tipoParticipacion = watch("tipoParticipacion");
     const nombres = watch("nombres");
     const apellidos = watch("apellidos");
     const categoria = watch("categoria");
@@ -12,18 +14,38 @@ export function StepResumen() {
     const academiaCrew = watch("academiaCrew");
     const paqueteBase = watch("paqueteBase");
     const workshopsSeleccionados = watch("workshopsSeleccionados") ?? [];
+    const agregarOpenStyle = watch("agregarOpenStyle") ?? false;
+    const fotoUrl = watch("fotoUrl");
 
-    const precioTotal = paqueteBase ? calcularPrecioTotal(paqueteBase, workshopsSeleccionados) : 0;
+    const esPublico = tipoParticipacion === "PUBLICO";
+    const preventaActiva = preventaVigentePorFecha();
+    const precioTotal = paqueteBase
+        ? calcularPrecioTotal(paqueteBase, workshopsSeleccionados, { agregarOpenStyle, preventaActiva })
+        : 0;
 
     const filas: { label: string; valor: string }[] = [
         { label: "Nombre", valor: `${nombres ?? ""} ${apellidos ?? ""}`.trim() || "—" },
         { label: "Categoría", valor: categoria ? CATEGORIAS[categoria] : "—" },
         { label: "Ciudad", valor: ciudad || "—" },
-        { label: "Academia / Crew", valor: academiaCrew || "Ninguna" },
+        ...(esPublico ? [] : [{ label: "Academia / Crew", valor: academiaCrew || "Ninguna" }]),
+        ...(agregarOpenStyle ? [{ label: "Extra", valor: "Open Style 1 vs 1" }] : []),
     ];
 
     return (
         <>
+            {fotoUrl && (
+                <div className="mb-4 flex justify-center">
+                    <Image
+                        src={fotoUrl}
+                        alt="Foto del competidor"
+                        width={96}
+                        height={96}
+                        unoptimized
+                        className="h-24 w-24 rounded-full border-2 border-boss-red object-cover"
+                    />
+                </div>
+            )}
+
             <div className="space-y-3 rounded-lg border border-boss-border bg-boss-black/40 p-4">
                 {filas.map((fila) => (
                     <div key={fila.label} className="flex items-center justify-between gap-3 text-sm">

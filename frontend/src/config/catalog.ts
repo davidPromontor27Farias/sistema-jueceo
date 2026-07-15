@@ -66,8 +66,9 @@ export type PaqueteBase =
     | "VIP_EXPERIENCE"
     | "BOSS_EXPERIENCE"
     | "BOSS_VIP"
-    | "PRO_PACKAGE"
     | "SOLO_WORKSHOPS";
+
+export type TipoParticipacion = "COMPETIDOR" | "PUBLICO";
 
 // Etiqueta legible para mostrar en el <select>; el valor enviado al backend es la clave.
 export const CATEGORIAS: Record<Categoria, string> = {
@@ -85,23 +86,29 @@ export const CATEGORIAS: Record<Categoria, string> = {
 
 export const PAQUETES_BASE: Record<PaqueteBase, string> = {
     COMPETIDOR: "The Boss Entry",
-    PUBLICO_GENERAL: "Público General",
+    PUBLICO_GENERAL: "Entrada General",
     VIP_EXPERIENCE: "VIP Experience",
     BOSS_EXPERIENCE: "The Boss Experience",
     BOSS_VIP: "The Boss VIP",
-    PRO_PACKAGE: "Pro Package",
     SOLO_WORKSHOPS: "Training Pass",
 };
 
 export const PAQUETES_BASE_DESCRIPCION: Record<PaqueteBase, string> = {
-    COMPETIDOR: "Incluye: Competencia.",
-    PUBLICO_GENERAL: "Entrada como espectador.",
-    VIP_EXPERIENCE: "Entrada / Meet & Greet / Foto / Lugar preferente / Bebida (no alcohólica).",
-    BOSS_EXPERIENCE: "Incluye: Competencia + los 3 workshops.",
-    BOSS_VIP: "Entrada rápida / Fila preferencial / Foto profesional / Autógrafo / Poster Oficial / Sticker / Lanyard VIP / Zona preferencial durante workshops / Meet & Greet.",
-    PRO_PACKAGE: "Competencia / 3 Workshops / Meet & Greet / Foto profesional / Fila rápida / Poster Oficial / Lanyard VIP / Zona preferencial / Playera Oficial / Bebida (no alcohólica).",
+    COMPETIDOR:
+        "Incluye: Inscripción a 1 categoría, acceso como competidor, QR personal e intransferible, perfil y foto en plataforma.",
+    PUBLICO_GENERAL: "Acceso como espectador.",
+    VIP_EXPERIENCE: "Entrada General / Meet & Greet / Fotografía oficial / Zona preferente / Bebida energetizante.",
+    BOSS_EXPERIENCE: "Inscripción a 1 categoría de breaking + los 3 workshops.",
+    BOSS_VIP:
+        "Inscripción a 1 categoría + 3 workshops / Meet & Greet / Foto profesional / Fila rápida / Poster oficial / Lanyard VIP / Zona preferencial / Playera oficial / Bebida energetizante.",
     SOLO_WORKSHOPS: "Solo workshops, sin competencia: elige 1, 2 o los 3.",
 };
+
+// Paquetes que solo puede elegir quien se registra como competidor.
+export const PAQUETES_COMPETIDOR: PaqueteBase[] = ["COMPETIDOR", "BOSS_EXPERIENCE", "BOSS_VIP", "SOLO_WORKSHOPS"];
+
+// Paquetes que solo puede elegir quien se registra como público.
+export const PAQUETES_PUBLICO: PaqueteBase[] = ["PUBLICO_GENERAL", "VIP_EXPERIENCE"];
 
 // Debe coincidir exactamente con backend/src/config/catalog.ts
 // PENDIENTE: confirmar con el cliente la matriz completa de reglas sexo+edad.
@@ -130,37 +137,85 @@ export const ACADEMIAS_CONOCIDAS = ["Academia Ejemplo 1", "Academia Ejemplo 2", 
 export const PRECIO_MXN_CENTAVOS_POR_PAQUETE_BASE: Record<PaqueteBase, number> = {
     COMPETIDOR: 60000,
     PUBLICO_GENERAL: 25000,
-    VIP_EXPERIENCE: 40000,
-    BOSS_EXPERIENCE: 110000,
-    BOSS_VIP: 25000,
-    PRO_PACKAGE: 150000,
+    VIP_EXPERIENCE: 50000,
+    BOSS_EXPERIENCE: 120000,
+    BOSS_VIP: 150000,
     SOLO_WORKSHOPS: 0,
 };
 
 export const PRECIO_MXN_CENTAVOS_WORKSHOP_INDIVIDUAL = 25000;
 export const PRECIO_MXN_CENTAVOS_WORKSHOP_BUNDLE_3 = 60000;
+export const PRECIO_MXN_CENTAVOS_OPEN_STYLE_ADDON = 25000;
 
-const PAQUETES_CON_WORKSHOPS_INCLUIDOS: PaqueteBase[] = ["BOSS_EXPERIENCE", "BOSS_VIP", "PRO_PACKAGE"];
+// --- Preventa Fundadores: 20% OFF ---
+// Aplica solo a The Boss Entry, The Boss Experience, Entrada General y al bundle
+// de 3 workshops. Únicamente a los primeros 50 lugares, durante julio o hasta
+// agotar existencias (lo que ocurra primero). El cupo real solo lo valida el
+// backend (ver backend/src/routes/registrations.ts); aquí solo se aproxima por
+// fecha para mostrar el precio en el formulario.
+export const PREVENTA_FECHA_INICIO = new Date("2026-07-01T00:00:00-06:00");
+export const PREVENTA_FECHA_FIN = new Date("2026-07-31T23:59:59-06:00");
+export const PREVENTA_CUPO_MAXIMO = 50;
 
-function precioWorkshops(workshopsSeleccionados: number[]): number {
+export const PAQUETES_CON_PREVENTA: PaqueteBase[] = ["COMPETIDOR", "BOSS_EXPERIENCE", "PUBLICO_GENERAL"];
+
+export const PRECIO_MXN_CENTAVOS_POR_PAQUETE_BASE_PREVENTA: Partial<Record<PaqueteBase, number>> = {
+    COMPETIDOR: 48000,
+    BOSS_EXPERIENCE: 96000,
+    PUBLICO_GENERAL: 20000,
+};
+
+export const PRECIO_MXN_CENTAVOS_WORKSHOP_BUNDLE_3_PREVENTA = 48000;
+
+export function preventaVigentePorFecha(ahora: Date = new Date()): boolean {
+    return ahora >= PREVENTA_FECHA_INICIO && ahora <= PREVENTA_FECHA_FIN;
+}
+
+const PAQUETES_CON_WORKSHOPS_INCLUIDOS: PaqueteBase[] = ["BOSS_EXPERIENCE", "BOSS_VIP"];
+
+function precioBaseEfectivo(paqueteBase: PaqueteBase, preventaActiva: boolean): number {
+    if (preventaActiva && PAQUETES_CON_PREVENTA.includes(paqueteBase)) {
+        return PRECIO_MXN_CENTAVOS_POR_PAQUETE_BASE_PREVENTA[paqueteBase] ?? PRECIO_MXN_CENTAVOS_POR_PAQUETE_BASE[paqueteBase];
+    }
+    return PRECIO_MXN_CENTAVOS_POR_PAQUETE_BASE[paqueteBase];
+}
+
+function precioWorkshops(workshopsSeleccionados: number[], preventaActiva: boolean): number {
     const cantidad = new Set(workshopsSeleccionados).size;
-    if (cantidad >= 3) return PRECIO_MXN_CENTAVOS_WORKSHOP_BUNDLE_3;
+    if (cantidad >= 3) {
+        return preventaActiva ? PRECIO_MXN_CENTAVOS_WORKSHOP_BUNDLE_3_PREVENTA : PRECIO_MXN_CENTAVOS_WORKSHOP_BUNDLE_3;
+    }
     return cantidad * PRECIO_MXN_CENTAVOS_WORKSHOP_INDIVIDUAL;
 }
 
+export interface OpcionesPrecioTotal {
+    agregarOpenStyle?: boolean;
+    preventaActiva?: boolean;
+}
+
 // Solo para mostrar el total en vivo en el formulario; el backend es la fuente de verdad.
-export function calcularPrecioTotal(paqueteBase: PaqueteBase, workshopsSeleccionados: number[] = []): number {
-    const precioBase = PRECIO_MXN_CENTAVOS_POR_PAQUETE_BASE[paqueteBase];
+export function calcularPrecioTotal(
+    paqueteBase: PaqueteBase,
+    workshopsSeleccionados: number[] = [],
+    opciones: OpcionesPrecioTotal = {},
+): number {
+    const preventaActiva = opciones.preventaActiva ?? false;
+    const precioBase = precioBaseEfectivo(paqueteBase, preventaActiva);
 
+    let total: number;
     if (paqueteBase === "SOLO_WORKSHOPS") {
-        return precioWorkshops(workshopsSeleccionados);
+        total = precioWorkshops(workshopsSeleccionados, preventaActiva);
+    } else if (PAQUETES_CON_WORKSHOPS_INCLUIDOS.includes(paqueteBase)) {
+        total = precioBase;
+    } else {
+        total = precioBase + precioWorkshops(workshopsSeleccionados, preventaActiva);
     }
 
-    if (PAQUETES_CON_WORKSHOPS_INCLUIDOS.includes(paqueteBase)) {
-        return precioBase;
+    if (opciones.agregarOpenStyle) {
+        total += PRECIO_MXN_CENTAVOS_OPEN_STYLE_ADDON;
     }
 
-    return precioBase + precioWorkshops(workshopsSeleccionados);
+    return total;
 }
 
 export function formatearMXN(centavos: number): string {

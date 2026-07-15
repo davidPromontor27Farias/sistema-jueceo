@@ -15,6 +15,7 @@ type EstadoConsulta =
           categoriaLabel: string;
           competidorId: string | null;
           qrDataUrl: string;
+          fotoUrl: string | null;
       };
 
 const INTERVALO_MS = 2500;
@@ -52,6 +53,7 @@ export default function QrStatus() {
                     categoriaLabel: data.categoriaLabel ?? data.tipoBoleto ?? "",
                     competidorId: data.competidorId ?? null,
                     qrDataUrl: data.qrDataUrl,
+                    fotoUrl: data.fotoUrl ?? null,
                 });
                 return;
             }
@@ -115,59 +117,82 @@ export default function QrStatus() {
     };
 
     return (
-        <div className="mt-6 flex flex-col items-center">
-            <h2 className="font-display text-2xl uppercase tracking-wide text-white">¡Bienvenido a THE BOSS!</h2>
-            <p className="mt-1 text-sm text-boss-gray">Tu registro ha sido confirmado.</p>
+        <div className="mt-6 w-full max-w-3xl text-left">
+            <div className="grid grid-cols-1 items-start gap-8 md:grid-cols-2">
+                <div className="flex flex-col items-start">
+                    <h2 className="font-display text-2xl uppercase tracking-wide text-white">
+                        ¡Bienvenido a THE BOSS!
+                    </h2>
+                    <p className="mt-1 text-sm text-boss-gray">Tu registro ha sido confirmado.</p>
 
-            <div className="mt-6 rounded-xl border border-boss-border bg-white p-4">
-                <Image
-                    src={estado.qrDataUrl}
-                    alt={`Código QR de acceso de ${estado.nombreArtistico}`}
-                    width={260}
-                    height={260}
-                    unoptimized
-                />
+                    {estado.fotoUrl && (
+                        <Image
+                            src={estado.fotoUrl}
+                            alt={`Foto de ${estado.nombreArtistico}`}
+                            width={110}
+                            height={140}
+                            unoptimized
+                            className="mt-4 h-36 w-28 rounded-lg border border-boss-border object-cover"
+                        />
+                    )}
+
+                    <div className="mt-5 space-y-1">
+                        <p className="font-display text-lg uppercase tracking-wide text-white">
+                            Competidor: {estado.nombreArtistico}
+                        </p>
+                        <p className="text-sm uppercase tracking-widest text-boss-gray">
+                            Categoría: {estado.categoriaLabel}
+                        </p>
+                        {estado.competidorId && (
+                            <p className="text-sm uppercase tracking-widest text-boss-green">
+                                ID: {estado.competidorId}
+                            </p>
+                        )}
+                    </div>
+
+                    <div className="mt-6 flex flex-col items-start gap-3">
+                        <a
+                            href={estado.qrDataUrl}
+                            download={`qr-acceso-${estado.nombreArtistico}.png`}
+                            className="rounded-md border border-boss-border px-4 py-2 text-sm font-semibold uppercase tracking-wide text-white transition-colors hover:border-boss-green hover:text-boss-green"
+                        >
+                            Descargar QR
+                        </a>
+                        <a
+                            href={urlWhatsapp}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="rounded-md border border-boss-border px-4 py-2 text-sm font-semibold uppercase tracking-wide text-white transition-colors hover:border-boss-green hover:text-boss-green"
+                        >
+                            Compartir en WhatsApp
+                        </a>
+                        <button
+                            type="button"
+                            onClick={compartirInstagram}
+                            className="rounded-md border border-boss-border px-4 py-2 text-sm font-semibold uppercase tracking-wide text-white transition-colors hover:border-boss-green hover:text-boss-green"
+                        >
+                            Compartir en Instagram
+                        </button>
+                    </div>
+                </div>
+
+                <div className="flex justify-center md:justify-end">
+                    <div className="rounded-xl border border-boss-border bg-white p-4">
+                        <Image
+                            src={estado.qrDataUrl}
+                            alt={`Código QR de acceso de ${estado.nombreArtistico}`}
+                            width={260}
+                            height={260}
+                            unoptimized
+                        />
+                    </div>
+                </div>
             </div>
 
-            <p className="mt-6 max-w-md text-boss-gray">
+            <p className="mt-8 text-center text-boss-gray">
                 Este código QR es tu acceso <span className="text-boss-green">único</span> al evento. Preséntalo en la
                 entrada; solo puede usarse una vez.
             </p>
-
-            <div className="mt-4 space-y-1 text-center">
-                <p className="font-display text-lg uppercase tracking-wide text-white">
-                    Competidor: {estado.nombreArtistico}
-                </p>
-                <p className="text-sm uppercase tracking-widest text-boss-gray">Categoría: {estado.categoriaLabel}</p>
-                {estado.competidorId && (
-                    <p className="text-sm uppercase tracking-widest text-boss-green">ID: {estado.competidorId}</p>
-                )}
-            </div>
-
-            <div className="mt-6 flex flex-wrap justify-center gap-3">
-                <a
-                    href={estado.qrDataUrl}
-                    download={`qr-acceso-${estado.nombreArtistico}.png`}
-                    className="rounded-md border border-boss-border px-4 py-2 text-sm font-semibold uppercase tracking-wide text-white transition-colors hover:border-boss-green hover:text-boss-green"
-                >
-                    Descargar QR
-                </a>
-                <a
-                    href={urlWhatsapp}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="rounded-md border border-boss-border px-4 py-2 text-sm font-semibold uppercase tracking-wide text-white transition-colors hover:border-boss-green hover:text-boss-green"
-                >
-                    Compartir en WhatsApp
-                </a>
-                <button
-                    type="button"
-                    onClick={compartirInstagram}
-                    className="rounded-md border border-boss-border px-4 py-2 text-sm font-semibold uppercase tracking-wide text-white transition-colors hover:border-boss-green hover:text-boss-green"
-                >
-                    Compartir en Instagram
-                </button>
-            </div>
         </div>
     );
 }

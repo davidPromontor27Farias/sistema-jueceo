@@ -3,6 +3,9 @@ import { registrationSchema } from "../types/registration";
 import {
     calcularPrecioTotal,
     tipoBoletoPorCategoria,
+    preventaVigentePorFecha,
+    PAQUETES_CON_PREVENTA,
+    PREVENTA_CUPO_MAXIMO,
     CATEGORIAS_LABEL,
     PAQUETES_BASE_LABEL,
 } from "../config/catalog";
@@ -10,6 +13,22 @@ import { prisma } from "../lib/prisma";
 import { stripe } from "../lib/stripe";
 import { generarQrDataUrl } from "../lib/qr";
 import { registrationCreateLimiter, registrationStatusLimiter } from "../lib/rateLimit";
+
+// La preventa Fundadores está vigente si estamos dentro de la ventana de fechas
+// Y aún quedan lugares entre los primeros PREVENTA_CUPO_MAXIMO (contando solo
+// registros con pago confirmado en los paquetes que aplican).
+async function calcularPreventaActiva(): Promise<boolean> {
+    if (!preventaVigentePorFecha()) return false;
+
+    const inscritosPreventa = await prisma.registration.count({
+        where: {
+            paqueteBase: { in: PAQUETES_CON_PREVENTA },
+            estatusPago: "PAGADO",
+        },
+    });
+
+    return inscritosPreventa < PREVENTA_CUPO_MAXIMO;
+}
 
 
 export const registrationsRouter = Router();
@@ -29,6 +48,7 @@ registrationsRouter.get("/by-session/:sessionId", registrationStatusLimiter, asy
             competidorId: true,
             estatusPago: true,
             qrToken: true,
+            fotoUrl: true,
         },
     });
 
@@ -48,6 +68,7 @@ registrationsRouter.get("/by-session/:sessionId", registrationStatusLimiter, asy
         tipoBoleto: registration.tipoBoleto,
         categoria: registration.categoria,
         categoriaLabel: CATEGORIAS_LABEL[registration.categoria],
+        fotoUrl: registration.fotoUrl,
         competidorId: registration.competidorId,
         qrDataUrl,
     });
@@ -64,7 +85,13 @@ registrationsRouter.post("/", registrationCreateLimiter, async (req, res) => {
 
     const data = parsed.data;
     const tipoBoleto = tipoBoletoPorCategoria(data.categoria);
-    const precioMXNCentavos = calcularPrecioTotal(data.paqueteBase, data.workshopsSeleccionados);
+    // Público en general no captura Bboy/Bgirl name; usamos su nombre completo como respaldo.
+    const nombreArtistico = data.nombreArtistico || `${data.nombres} ${data.apellidos}`.trim();
+    const preventaActiva = await calcularPreventaActiva();
+    const precioMXNCentavos = calcularPrecioTotal(data.paqueteBase, data.workshopsSeleccionados, {
+        agregarOpenStyle: data.agregarOpenStyle,
+        preventaActiva,
+    });
 
     let registrationId: string;
     try{
@@ -72,7 +99,7 @@ registrationsRouter.post("/", registrationCreateLimiter, async (req, res) => {
             data: {
                 nombres: data.nombres,
                 apellidos: data.apellidos,
-                nombreArtistico: data.nombreArtistico,
+                nombreArtistico,
                 fechaNacimiento: data.fechaNacimiento,
                 categoria: data.categoria,
                 sexo: data.sexo,
@@ -92,6 +119,7 @@ registrationsRouter.post("/", registrationCreateLimiter, async (req, res) => {
                 tipoBoleto,
                 paqueteBase: data.paqueteBase,
                 workshopsSeleccionados: data.workshopsSeleccionados,
+                agregarOpenStyle: data.agregarOpenStyle,
                 precioMXNCentavos,
             },
         });
@@ -106,7 +134,7 @@ registrationsRouter.post("/", registrationCreateLimiter, async (req, res) => {
     }
 
     try{
-        const nombreProducto = `${PAQUETES_BASE_LABEL[data.paqueteBase]} — ${CATEGORIAS_LABEL[data.categoria]}`;
+        const nombreProducto = `${PAQUETES_BASE_LABEL[data.paqueteBase]} — ${CATEGORIAS_LABEL[data.categoria]}${data.agregarOpenStyle ? " + Open Style 1 vs 1" : ""}`;
         const session = await stripe.checkout.sessions.create({
             mode: "payment",
             customer_email: data.correo,

@@ -39,6 +39,11 @@ export function StepContacto() {
         setValue("fotoUrl", resultado.url, { shouldValidate: true });
     };
 
+    const corregirFoto = () => {
+        setErrorFoto(null);
+        setValue("fotoUrl", "", { shouldValidate: false });
+    };
+
     return (
         <>
             <Field label="Correo" error={errors.correo?.message}>
@@ -69,27 +74,37 @@ export function StepContacto() {
                 {/* fotoUrl se llena vía setValue tras subir a Cloudinary; este input oculto
                     registra el campo en react-hook-form para que trigger()/validación lo detecte. */}
                 <input type="hidden" {...register("fotoUrl")} />
-                <input
-                    type="file"
-                    accept="image/jpeg,image/png"
-                    onChange={onFotoSeleccionada}
-                    disabled={subiendo || fotoDeshabilitada}
-                    className={`${inputClass} cursor-pointer file:mr-3 file:rounded file:border-0 file:bg-boss-red file:px-3 file:py-1.5 file:text-white disabled:cursor-not-allowed disabled:opacity-50`}
-                />
-                {subiendo && <span className="mt-2 block text-xs text-boss-gray">Subiendo foto...</span>}
-                {fotoUrl && !subiendo && (
-                    <div className="mt-3 flex items-center gap-3">
+                {fotoUrl && !subiendo ? (
+                    <div className="flex items-center gap-3">
                         <Image
                             src={fotoUrl}
                             alt="Foto de perfil"
                             width={64}
                             height={64}
                             unoptimized
-                            className="h-16 w-16 rounded-md border border-boss-border object-cover"
+                            className="h-16 w-16 rounded-full border border-boss-border object-cover"
                         />
-                        <span className="text-xs text-boss-green">Foto subida correctamente</span>
+                        <div className="flex flex-col items-start gap-1.5">
+                            <span className="text-xs text-boss-green">Foto subida correctamente</span>
+                            <button
+                                type="button"
+                                onClick={corregirFoto}
+                                className="text-xs font-semibold uppercase tracking-wide text-boss-red underline-offset-2 hover:underline"
+                            >
+                                Corregir foto
+                            </button>
+                        </div>
                     </div>
+                ) : (
+                    <input
+                        type="file"
+                        accept="image/jpeg,image/png"
+                        onChange={onFotoSeleccionada}
+                        disabled={subiendo || fotoDeshabilitada}
+                        className={`${inputClass} cursor-pointer file:mr-3 file:rounded file:border-0 file:bg-boss-red file:px-3 file:py-1.5 file:text-white disabled:cursor-not-allowed disabled:opacity-50`}
+                    />
                 )}
+                {subiendo && <span className="mt-2 block text-xs text-boss-gray">Subiendo foto...</span>}
             </Field>
         </>
     );

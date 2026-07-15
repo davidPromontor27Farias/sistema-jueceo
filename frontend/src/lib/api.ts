@@ -55,6 +55,7 @@ export type RegistrationBySession = {
     categoriaLabel?: string;
     competidorId?: string | null;
     qrDataUrl?: string;
+    fotoUrl?: string | null;
     error?: string;
 };
 

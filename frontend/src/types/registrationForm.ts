@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { REGLAS_POR_CATEGORIA, ESTADOS_MEXICO } from "@/config/catalog";
+import { REGLAS_POR_CATEGORIA, ESTADOS_MEXICO, PAQUETES_COMPETIDOR, PAQUETES_PUBLICO } from "@/config/catalog";
 import type { Categoria } from "@/config/catalog";
 
 const SOLO_LETRAS = /^[A-Za-zÁÉÍÓÚÑáéíóúñ'\-\s]+$/;
@@ -13,7 +13,6 @@ const PAQUETES_BASE_KEYS = [
     "VIP_EXPERIENCE",
     "BOSS_EXPERIENCE",
     "BOSS_VIP",
-    "PRO_PACKAGE",
     "SOLO_WORKSHOPS",
 ] as const;
 
@@ -34,9 +33,10 @@ export function calcularEdadDesde(fechaNacimiento: Date): number {
 
 export const registrationFormSchema = z
     .object({
+        tipoParticipacion: z.enum(["COMPETIDOR", "PUBLICO"], { message: "Selecciona cómo participarás" }),
         nombres: z.string().trim().min(1, "Requerido").regex(SOLO_LETRAS, "Solo letras"),
         apellidos: z.string().trim().min(1, "Requerido").regex(SOLO_LETRAS, "Solo letras"),
-        nombreArtistico: z.string().trim().min(1, "Requerido").max(50),
+        nombreArtistico: z.string().trim().max(50).optional().or(z.literal("")),
         fechaNacimiento: z.coerce.date({ message: "Fecha inválida" }),
         categoria: z.enum(CATEGORIAS_KEYS, { message: "Selecciona una categoría" }),
         sexo: z.enum(["MASCULINO", "FEMENINO"], { message: "Selecciona una opción" }),
@@ -51,6 +51,7 @@ export const registrationFormSchema = z
         fotoUrl: z.string().url("Sube tu foto para continuar").optional().or(z.literal("")),
         paqueteBase: z.enum(PAQUETES_BASE_KEYS, { message: "Selecciona un paquete" }),
         workshopsSeleccionados: z.array(z.number().int().min(1).max(3)).max(3).default([]),
+        agregarOpenStyle: z.boolean().default(false),
         aceptaReglamento: z.boolean().optional(),
         aceptaAvisoPrivacidad: z.boolean().optional(),
         aceptaPoliticaCancelacion: z.boolean().optional(),
@@ -94,7 +95,23 @@ export const registrationFormSchema = z
                 message: "Sube tu foto para continuar",
             });
         }
-        if (!data.aceptaReglamento) {
+        if (data.tipoParticipacion === "COMPETIDOR" && !data.nombreArtistico) {
+            ctx.addIssue({ code: "custom", path: ["nombreArtistico"], message: "Requerido" });
+        }
+        if (data.tipoParticipacion === "PUBLICO" && data.categoria !== "PUBLICO_GENERAL") {
+            ctx.addIssue({ code: "custom", path: ["categoria"], message: "Selecciona una categoría válida" });
+        }
+        if (data.tipoParticipacion === "COMPETIDOR" && data.categoria === "PUBLICO_GENERAL") {
+            ctx.addIssue({ code: "custom", path: ["categoria"], message: "Selecciona una categoría de competencia" });
+        }
+        const paquetesValidos = data.tipoParticipacion === "PUBLICO" ? PAQUETES_PUBLICO : PAQUETES_COMPETIDOR;
+        if (data.paqueteBase && !paquetesValidos.includes(data.paqueteBase)) {
+            ctx.addIssue({ code: "custom", path: ["paqueteBase"], message: "Selecciona un paquete válido" });
+        }
+        if (data.agregarOpenStyle && (data.tipoParticipacion === "PUBLICO" || data.categoria === "OPEN_STYLE_1V1")) {
+            ctx.addIssue({ code: "custom", path: ["agregarOpenStyle"], message: "El extra de Open Style no aplica aquí" });
+        }
+        if (data.tipoParticipacion === "COMPETIDOR" && !data.aceptaReglamento) {
             ctx.addIssue({ code: "custom", path: ["aceptaReglamento"], message: "Debes aceptar el reglamento" });
         }
         if (!data.aceptaAvisoPrivacidad) {
