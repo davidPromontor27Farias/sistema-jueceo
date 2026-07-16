@@ -38,22 +38,22 @@ export function StepResumen() {
                     <Image
                         src={fotoUrl}
                         alt="Foto del competidor"
-                        width={96}
-                        height={96}
+                        width={150}
+                        height={150}
                         unoptimized
-                        className="h-24 w-24 rounded-full border-2 border-boss-red object-cover"
+                        className="h-50 w-50 rounded-full border-2 border-boss-red object-cover"
                     />
                 </div>
             )}
 
             <div className="space-y-3 rounded-lg border border-boss-border bg-boss-black/40 p-4">
                 {filas.map((fila) => (
-                    <div key={fila.label} className="flex items-center justify-between gap-3 text-sm">
+                    <div key={fila.label} className="mx-auto flex max-w-56 items-center justify-between gap-3 text-sm">
                         <span className="text-boss-gray">{fila.label}</span>
                         <span className="font-medium text-foreground">{fila.valor}</span>
                     </div>
                 ))}
-                <div className="flex items-center justify-between gap-3 border-t border-boss-border pt-3">
+                <div className="mx-auto flex max-w-56 items-center justify-between gap-3 border-t border-boss-border pt-3">
                     <span className="text-sm font-semibold uppercase tracking-wide text-white">Costo Total</span>
                     <span className="font-display text-xl text-boss-red">{formatearMXN(precioTotal)}</span>
                 </div>

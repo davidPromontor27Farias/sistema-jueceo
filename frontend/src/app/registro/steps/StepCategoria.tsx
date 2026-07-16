@@ -129,7 +129,7 @@ export function StepCategoria() {
                                 checked={agregarOpenStyle === true}
                                 onChange={() => setValue("agregarOpenStyle", true, { shouldValidate: true })}
                             />
-                            Sí — Agregar Open Style {formatearMXN(PRECIO_MXN_CENTAVOS_OPEN_STYLE_ADDON)}
+                            Sí — Agregar {formatearMXN(PRECIO_MXN_CENTAVOS_OPEN_STYLE_ADDON)}
                         </label>
                         <label className="flex items-center gap-2 text-sm text-foreground">
                             <input
@@ -199,7 +199,7 @@ export function StepCategoria() {
 
             <div className="rounded-lg border border-boss-border bg-boss-black/40 p-4">
                 <h3 className="mb-3 text-xs font-semibold uppercase tracking-widest text-boss-gray">
-                    Costos y paquetes
+                    Costos
                 </h3>
                 <ul className="space-y-3 text-sm text-foreground">
                     {paquetesDisponibles.map(([key, label]) => {

@@ -130,7 +130,32 @@ export const REGLAS_POR_CATEGORIA: Record<
 
 // PENDIENTE: lista real de academias/crews del cliente. Debe coincidir con
 // backend/src/config/catalog.ts (aquí solo se usa para el picklist).
-export const ACADEMIAS_CONOCIDAS = ["Academia Ejemplo 1", "Academia Ejemplo 2", "Crew Ejemplo"] as const;
+export const ACADEMIAS_CONOCIDAS = [
+    "Axolobreak",
+    "BDM",
+    "Cerro del Poder",
+    "DLC Crew",
+    "Free Step Rockers",
+    "Fuckin Flavor",
+    "Gravedad Zero",
+    "Grizzlee",
+    "Hoolokunz",
+    "Indígenas Rocker",
+    "Kadetes del Toke",
+    "La Vieja Nueva",
+    "Loyalty Crew",
+    "Mejor Baila",
+    "Mexas",
+    "Nunca muere",
+    "Other Side",
+    "Papyrikis",
+    "Raro Villano",
+    "Revolución Urbana",
+    "Spin Máster",
+    "Twisted Flavor",
+    "Unik Breakers",
+    "Xhotaz Killa",
+] as const;
 
 // Precio en centavos de MXN. Debe coincidir exactamente con backend/src/config/catalog.ts
 // (el backend siempre recalcula el total; esto solo es para mostrarlo en el formulario).

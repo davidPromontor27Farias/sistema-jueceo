@@ -25,7 +25,7 @@ const STEPS: { title: string; fields: FieldName[] }[] = [
         fields: ["tipoParticipacion", "nombres", "apellidos", "nombreArtistico", "fechaNacimiento", "sexo", "nacionalidad"],
     },
     {
-        title: "Categoría y paquete",
+        title: "Costos",
         fields: ["categoria", "estado", "ciudad", "academiaCrew", "paqueteBase", "workshopsSeleccionados", "agregarOpenStyle"],
     },
     { title: "Contacto y foto", fields: ["correo", "telefono", "instagram", "contactoEmergencia", "fotoUrl"] },
@@ -202,12 +202,9 @@ function HeroBody() {
                 className="mx-auto drop-shadow-[0_0_30px_rgba(226,9,26,0.3)] lg:mx-0"
             />
 
-            <span className="mt-3 block text-xs font-semibold uppercase tracking-widest text-boss-gray">
-                31 Oct &amp; 1 Nov · {SEDE_EVENTO}
-            </span>
 
             <h1 className="mt-4 font-display text-2xl uppercase leading-[1.05] tracking-wide text-white sm:text-3xl">
-                ¡Sé parte de <span className="text-boss-red">la 1ra Edición</span>!
+                ¡Sé parte del evento que <span className="text-boss-red">revolucionará el Breaking en México</span>!
             </h1>
 
             <ul className="mt-4 space-y-1.5 text-left">

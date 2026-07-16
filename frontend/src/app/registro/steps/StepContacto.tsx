@@ -85,13 +85,13 @@ export function StepContacto() {
                             className="h-16 w-16 rounded-full border border-boss-border object-cover"
                         />
                         <div className="flex flex-col items-start gap-1.5">
-                            <span className="text-xs text-boss-green">Foto subida correctamente</span>
+                            <span className="text-xs text-boss-green">Foto lista para tu perfil</span>
                             <button
                                 type="button"
                                 onClick={corregirFoto}
                                 className="text-xs font-semibold uppercase tracking-wide text-boss-red underline-offset-2 hover:underline"
                             >
-                                Corregir foto
+                                Cambiar foto
                             </button>
                         </div>
                     </div>
