@@ -85,11 +85,15 @@ export const PAQUETES_BASE_LABEL: Record<PaqueteBase, string> = {
 };
 
 // Paquetes que solo puede elegir quien se registra como competidor.
+// PRUEBA_PAGO es temporal: mismo paquete de $10 MXN de pruebas, habilitado
+// también aquí para validar el flujo de pago de competidores. Quitar de aquí
+// una vez confirmado.
 export const PAQUETES_COMPETIDOR: PaqueteBase[] = [
     "COMPETIDOR",
     "BOSS_EXPERIENCE",
     "BOSS_VIP",
     "SOLO_WORKSHOPS",
+    "PRUEBA_PAGO",
 ];
 
 // Paquetes que solo puede elegir quien se registra como público.
