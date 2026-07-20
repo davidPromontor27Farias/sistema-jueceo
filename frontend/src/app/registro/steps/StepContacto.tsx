@@ -21,7 +21,7 @@ export function StepContacto() {
 
     const edad = fechaNacimiento ? calcularEdadDesde(new Date(fechaNacimiento)) : NaN;
     const esMenorDeEdad = !Number.isNaN(edad) && edad < 18;
-    const fotoDeshabilitada = paqueteBase === "PUBLICO_GENERAL" || paqueteBase === "PRUEBA_PAGO";
+    const fotoDeshabilitada = paqueteBase === "PUBLICO_GENERAL";
 
     const onFotoSeleccionada = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const archivo = e.target.files?.[0];
