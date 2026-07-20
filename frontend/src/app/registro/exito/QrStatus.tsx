@@ -13,6 +13,7 @@ type EstadoConsulta =
           fase: "listo";
           nombreArtistico: string;
           categoriaLabel: string;
+          tipoBoleto: string;
           competidorId: string | null;
           qrDataUrl: string;
           fotoUrl: string | null;
@@ -51,6 +52,7 @@ export default function QrStatus() {
                     fase: "listo",
                     nombreArtistico: data.nombreArtistico ?? "",
                     categoriaLabel: data.categoriaLabel ?? data.tipoBoleto ?? "",
+                    tipoBoleto: data.tipoBoleto ?? "",
                     competidorId: data.competidorId ?? null,
                     qrDataUrl: data.qrDataUrl,
                     fotoUrl: data.fotoUrl ?? null,
@@ -96,25 +98,7 @@ export default function QrStatus() {
         return <p className="mt-3 max-w-md text-boss-red">{estado.mensaje}</p>;
     }
 
-    const mensajeCompartir = `¡Ya estoy registrado en THE BOSS — Breaking Battles! Competidor: ${estado.nombreArtistico}${
-        estado.competidorId ? ` (${estado.competidorId})` : ""
-    }`;
-    const urlWhatsapp = `https://wa.me/?text=${encodeURIComponent(mensajeCompartir)}`;
-
-    const compartirInstagram = async () => {
-        if (navigator.share) {
-            try {
-                await navigator.share({ text: mensajeCompartir, url: estado.qrDataUrl });
-                return;
-            } catch {
-                // el usuario canceló el share o el navegador lo rechazó; cae al fallback de descarga
-            }
-        }
-        const enlace = document.createElement("a");
-        enlace.href = estado.qrDataUrl;
-        enlace.download = `the-boss-${estado.nombreArtistico}.png`;
-        enlace.click();
-    };
+    const esPublico = estado.tipoBoleto === "GENERAL";
 
     return (
         <div className="mt-6 w-full max-w-3xl text-left">
@@ -138,7 +122,7 @@ export default function QrStatus() {
 
                     <div className="mt-5 space-y-1">
                         <p className="font-display text-lg uppercase tracking-wide text-white">
-                            Competidor: {estado.nombreArtistico}
+                            {esPublico ? "Público general" : "Competidor"}: {estado.nombreArtistico}
                         </p>
                         <p className="text-sm uppercase tracking-widest text-boss-gray">
                             Categoría: {estado.categoriaLabel}
@@ -158,21 +142,6 @@ export default function QrStatus() {
                         >
                             Descargar QR
                         </a>
-                        <a
-                            href={urlWhatsapp}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="rounded-md border border-boss-border px-4 py-2 text-sm font-semibold uppercase tracking-wide text-white transition-colors hover:border-boss-green hover:text-boss-green"
-                        >
-                            Compartir en WhatsApp
-                        </a>
-                        <button
-                            type="button"
-                            onClick={compartirInstagram}
-                            className="rounded-md border border-boss-border px-4 py-2 text-sm font-semibold uppercase tracking-wide text-white transition-colors hover:border-boss-green hover:text-boss-green"
-                        >
-                            Compartir en Instagram
-                        </button>
                     </div>
                 </div>
 

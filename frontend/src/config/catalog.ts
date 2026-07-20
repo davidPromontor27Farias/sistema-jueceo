@@ -119,11 +119,20 @@ export const PAQUETES_BASE_DESCRIPCION: Record<PaqueteBase, string> = {
     BOSS_VIP:
         "Inscripción a 1 categoría + 3 workshops / Meet & Greet / Foto profesional / Fila rápida / Poster oficial / Lanyard VIP / Zona preferencial / Playera oficial / Bebida energetizante.",
     SOLO_WORKSHOPS: "Solo workshops, sin competencia: elige 1, 2 o los 3.",
-    PRUEBA_PAGO: "SOLO PARA PRUEBAS: valida que la pasarela de pagos (Stripe) funcione en producción.",
+    PRUEBA_PAGO: "SOLO PARA PRUEBAS: valida que la pasarela de pagos (Stripe) funcione en producción, tanto para público como para competidores.",
 };
 
 // Paquetes que solo puede elegir quien se registra como competidor.
-export const PAQUETES_COMPETIDOR: PaqueteBase[] = ["COMPETIDOR", "BOSS_EXPERIENCE", "BOSS_VIP", "SOLO_WORKSHOPS"];
+// PRUEBA_PAGO es temporal: mismo paquete de $10 MXN de pruebas, habilitado
+// también aquí para validar el flujo de pago de competidores. Quitar de aquí
+// una vez confirmado.
+export const PAQUETES_COMPETIDOR: PaqueteBase[] = [
+    "COMPETIDOR",
+    "BOSS_EXPERIENCE",
+    "BOSS_VIP",
+    "SOLO_WORKSHOPS",
+    "PRUEBA_PAGO",
+];
 
 // Paquetes que solo puede elegir quien se registra como público.
 // PRUEBA_PAGO es temporal: paquete de $10 MXN para validar el flujo de pago
