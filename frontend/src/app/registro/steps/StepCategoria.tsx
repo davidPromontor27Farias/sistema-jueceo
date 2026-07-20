@@ -265,11 +265,13 @@ export function StepCategoria() {
                     <option value="">
                         Selecciona un paquete
                     </option>
-                    {paquetesDisponibles.map(([value, label]) => (
-                        <option key={value} value={value}>
-                            {label}
-                        </option>
-                    ))}
+                    {paquetesDisponibles
+                        .filter(([value]) => value !== "SOLO_WORKSHOPS")
+                        .map(([value, label]) => (
+                            <option key={value} value={value}>
+                                {label}
+                            </option>
+                        ))}
                 </select>
                 {paqueteBase && <p className="mt-1.5 text-xs text-boss-gray">{PAQUETES_BASE_DESCRIPCION[paqueteBase]}</p>}
             </Field>

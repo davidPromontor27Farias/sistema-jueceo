@@ -118,7 +118,8 @@ export const PAQUETES_BASE_DESCRIPCION: Record<PaqueteBase, string> = {
     BOSS_EXPERIENCE: "Inscripción a 1 categoría de breaking + los 3 workshops.",
     BOSS_VIP:
         "Inscripción a 1 categoría + 3 workshops / Meet & Greet / Foto profesional / Fila rápida / Poster oficial / Lanyard VIP / Zona preferencial / Playera oficial / Bebida energetizante.",
-    SOLO_WORKSHOPS: "Solo workshops, sin competencia: elige 1, 2 o los 3.",
+    SOLO_WORKSHOPS:
+        "En la selección de 3 workshops recibe un descuento de $150. Y para los primeros 50 lugares un descuento adicional del 20%. Total $480.00",
     PRUEBA_PAGO: "SOLO PARA PRUEBAS: valida que la pasarela de pagos (Stripe) funcione en producción, tanto para público como para competidores.",
 };
 
