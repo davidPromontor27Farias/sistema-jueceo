@@ -25,7 +25,7 @@ const STEPS: { title: string; fields: FieldName[] }[] = [
         fields: ["tipoParticipacion", "nombres", "apellidos", "nombreArtistico", "fechaNacimiento", "sexo", "nacionalidad"],
     },
     {
-        title: "Costos",
+        title: "Categoría",
         fields: ["categoria", "estado", "ciudad", "academiaCrew", "paqueteBase", "workshopsSeleccionados", "agregarOpenStyle"],
     },
     { title: "Contacto y foto", fields: ["correo", "telefono", "instagram", "contactoEmergencia", "fotoUrl"] },
@@ -133,7 +133,7 @@ export default function RegistroPage() {
                                         {STEPS[currentStep].title}
                                     </h2>
 
-                                    <div className="space-y-5">
+                                    <div className="space-y-5 text-start">
                                         {currentStep === 0 && <StepDatosPersonales />}
                                         {currentStep === 1 && <StepCategoria />}
                                         {currentStep === 2 && <StepContacto />}

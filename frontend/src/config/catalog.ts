@@ -84,6 +84,19 @@ export const CATEGORIAS: Record<Categoria, string> = {
     OPEN_STYLE_1V1: "Especial: Open Style 1 vs 1",
 };
 
+// Comentario informativo con el rango de edad (o requisito) de cada categoría,
+// mostrado junto al nombre en el selector de categorías. Las categorías no
+// listadas aquí (Masters, Público general, Open Style) no llevan comentario.
+export const CATEGORIAS_COMENTARIO: Partial<Record<Categoria, string>> = {
+    KIDS_AMATEUR: "Hasta 2 años entrenando",
+    KIDS_BOYS: "Hasta 13 años",
+    KIDS_GIRL: "Hasta 13 años",
+    JUVENIL_BOYS: "14 a 17 años",
+    JUVENIL_GIRL: "14 a 17 años",
+    BGIRLS: "18 a 39 años",
+    BBOYS: "18 a 39 años",
+};
+
 export const PAQUETES_BASE: Record<PaqueteBase, string> = {
     COMPETIDOR: "The Boss Entry",
     PUBLICO_GENERAL: "Entrada General",

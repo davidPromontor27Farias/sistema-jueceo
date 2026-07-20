@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Field, inputClass } from "../components/Field";
 import {
     CATEGORIAS,
+    CATEGORIAS_COMENTARIO,
     ESTADOS_MEXICO,
     REGLAS_POR_CATEGORIA,
     ACADEMIAS_CONOCIDAS,
@@ -111,6 +112,7 @@ export function StepCategoria() {
                         {categoriasCompetidor.map(([value, label]) => (
                             <option key={value} value={value} disabled={!categoriaDisponible(value)}>
                                 {label}
+                                {CATEGORIAS_COMENTARIO[value] ? ` (${CATEGORIAS_COMENTARIO[value]})` : ""}
                                 {!categoriaDisponible(value) ? " (no disponible)" : ""}
                             </option>
                         ))}

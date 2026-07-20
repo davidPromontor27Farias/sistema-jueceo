@@ -52,10 +52,10 @@ La edad se calculará al día de inicio del evento. La organización podrá soli
 | Categoría | Edad | Género / formato | Nivel o alcance |
 | --- | --- | --- | --- |
 | Kids Amateur | Hasta 12 años | Mixto | Principiante / intermedio; máximo 2 años de práctica comprobable o declarada. |
-| Kids B-Boys | Hasta 12 años | Masculino | Nivel avanzado. |
-| Kids B-Girls | Hasta 12 años | Femenino | Nivel avanzado. |
-| Juvenil B-Boys | 13 a 17 años | Masculino | Categoría juvenil. |
-| Juvenil B-Girls | 13 a 17 años | Femenino | Categoría juvenil. |
+| Kids B-Boys | Hasta 13 años | Masculino | Nivel avanzado. |
+| Kids B-Girls | Hasta 13 años | Femenino | Nivel avanzado. |
+| Juvenil B-Boys | 14 a 17 años | Masculino | Categoría juvenil. |
+| Juvenil B-Girls | 14 a 17 años | Femenino | Categoría juvenil. |
 | B-Boys Adultos | 18 a 39 años | Masculino | Categoría abierta adulta. |
 | B-Girls Adultas | 18 a 39 años | Femenino | Categoría abierta adulta. |
 | Grandmasters +40 | 40 años o más | Mixto o según convocatoria | Categoría de experiencia y trayectoria. |

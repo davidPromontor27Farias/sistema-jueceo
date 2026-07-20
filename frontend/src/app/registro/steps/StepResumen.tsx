@@ -48,14 +48,16 @@ export function StepResumen() {
 
             <div className="space-y-3 rounded-lg border border-boss-border bg-boss-black/40 p-4">
                 {filas.map((fila) => (
-                    <div key={fila.label} className="mx-auto flex max-w-56 items-center justify-between gap-3 text-sm">
-                        <span className="text-boss-gray">{fila.label}</span>
-                        <span className="font-medium text-foreground">{fila.valor}</span>
+                    <div key={fila.label} className="mx-auto flex max-w-56 items-center gap-3 text-sm">
+                        <span className="w-28 shrink-0 text-boss-gray">{fila.label}</span>
+                        <span className="text-left font-medium text-foreground">{fila.valor}</span>
                     </div>
                 ))}
-                <div className="mx-auto flex max-w-56 items-center justify-between gap-3 border-t border-boss-border pt-3">
-                    <span className="text-sm font-semibold uppercase tracking-wide text-white">Costo Total</span>
-                    <span className="font-display text-xl text-boss-red">{formatearMXN(precioTotal)}</span>
+                <div className="mx-auto flex max-w-56 items-center gap-3 border-t border-boss-border pt-3">
+                    <span className="w-28 shrink-0 text-sm font-semibold uppercase tracking-wide text-white">
+                        Costo Total
+                    </span>
+                    <span className="text-left font-display text-xl text-boss-red">{formatearMXN(precioTotal)}</span>
                 </div>
             </div>
 
