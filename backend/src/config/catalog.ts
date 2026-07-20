@@ -92,7 +92,6 @@ export const PAQUETES_COMPETIDOR: PaqueteBase[] = [
     "COMPETIDOR",
     "BOSS_EXPERIENCE",
     "BOSS_VIP",
-    "SOLO_WORKSHOPS",
     "PRUEBA_PAGO",
 ];
 

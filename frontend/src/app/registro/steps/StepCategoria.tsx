@@ -242,6 +242,18 @@ export function StepCategoria() {
                             .
                         </li>
                     )}
+                    {!esPublico && (
+                        <li className="space-y-1.5 pt-2 text-sm text-boss-gray">
+                            <p>Workshop 1 - Footwork y Transiciones</p>
+                            <p>Workshop 2 - Powermoves</p>
+                            <p>Workshop 3 - Fundamentos y Estrategias</p>
+                            <p>Impartidos por referentes internacionales de BC One – Reveal próximamente</p>
+                            <p>
+                                Los workshops serán el sábado 31 de octubre a partir de las 10am. Duración
+                                aproximada 1.5hrs.
+                            </p>
+                        </li>
+                    )}
                 </ul>
             </div>
 
