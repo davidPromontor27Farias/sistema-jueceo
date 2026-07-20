@@ -54,6 +54,9 @@ enum PaqueteBase {
   BOSS_EXPERIENCE
   BOSS_VIP
   SOLO_WORKSHOPS
+  // TEMPORAL: paquete de $2 MXN solo para validar el flujo de pago con Stripe
+  // en producción. Eliminar (y su migración) una vez confirmado.
+  PRUEBA_PAGO
 }
 
 model Registration {

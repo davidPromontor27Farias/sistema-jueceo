@@ -66,7 +66,8 @@ export type PaqueteBase =
     | "VIP_EXPERIENCE"
     | "BOSS_EXPERIENCE"
     | "BOSS_VIP"
-    | "SOLO_WORKSHOPS";
+    | "SOLO_WORKSHOPS"
+    | "PRUEBA_PAGO";
 
 export type TipoParticipacion = "COMPETIDOR" | "PUBLICO";
 
@@ -104,6 +105,9 @@ export const PAQUETES_BASE: Record<PaqueteBase, string> = {
     BOSS_EXPERIENCE: "The Boss Experience",
     BOSS_VIP: "The Boss VIP",
     SOLO_WORKSHOPS: "Training Pass",
+    // TEMPORAL: solo para probar el flujo de pago en producción. Quitar esta
+    // entrada (y las demás marcadas TEMPORAL en este archivo) una vez confirmado.
+    PRUEBA_PAGO: "Prueba de Pago ($2 MXN)",
 };
 
 export const PAQUETES_BASE_DESCRIPCION: Record<PaqueteBase, string> = {
@@ -115,13 +119,16 @@ export const PAQUETES_BASE_DESCRIPCION: Record<PaqueteBase, string> = {
     BOSS_VIP:
         "Inscripción a 1 categoría + 3 workshops / Meet & Greet / Foto profesional / Fila rápida / Poster oficial / Lanyard VIP / Zona preferencial / Playera oficial / Bebida energetizante.",
     SOLO_WORKSHOPS: "Solo workshops, sin competencia: elige 1, 2 o los 3.",
+    PRUEBA_PAGO: "SOLO PARA PRUEBAS: valida que la pasarela de pagos (Stripe) funcione en producción.",
 };
 
 // Paquetes que solo puede elegir quien se registra como competidor.
 export const PAQUETES_COMPETIDOR: PaqueteBase[] = ["COMPETIDOR", "BOSS_EXPERIENCE", "BOSS_VIP", "SOLO_WORKSHOPS"];
 
 // Paquetes que solo puede elegir quien se registra como público.
-export const PAQUETES_PUBLICO: PaqueteBase[] = ["PUBLICO_GENERAL", "VIP_EXPERIENCE"];
+// PRUEBA_PAGO es temporal: paquete de $2 MXN para validar el flujo de pago
+// en producción. Quitar de aquí una vez confirmado.
+export const PAQUETES_PUBLICO: PaqueteBase[] = ["PUBLICO_GENERAL", "VIP_EXPERIENCE", "PRUEBA_PAGO"];
 
 // Debe coincidir exactamente con backend/src/config/catalog.ts
 // PENDIENTE: confirmar con el cliente la matriz completa de reglas sexo+edad.
@@ -179,6 +186,7 @@ export const PRECIO_MXN_CENTAVOS_POR_PAQUETE_BASE: Record<PaqueteBase, number> =
     BOSS_EXPERIENCE: 120000,
     BOSS_VIP: 150000,
     SOLO_WORKSHOPS: 0,
+    PRUEBA_PAGO: 200, // TEMPORAL: $2.00 MXN, solo para probar el flujo de pago en producción
 };
 
 export const PRECIO_MXN_CENTAVOS_WORKSHOP_INDIVIDUAL = 25000;

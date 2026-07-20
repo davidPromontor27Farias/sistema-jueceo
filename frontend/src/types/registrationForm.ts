@@ -14,6 +14,7 @@ const PAQUETES_BASE_KEYS = [
     "BOSS_EXPERIENCE",
     "BOSS_VIP",
     "SOLO_WORKSHOPS",
+    "PRUEBA_PAGO",
 ] as const;
 
 
@@ -88,7 +89,7 @@ export const registrationFormSchema = z
                 message: "El contacto de emergencia es obligatorio para menores de edad",
             });
         }
-        if (data.paqueteBase !== "PUBLICO_GENERAL" && !data.fotoUrl) {
+        if (data.paqueteBase !== "PUBLICO_GENERAL" && data.paqueteBase !== "PRUEBA_PAGO" && !data.fotoUrl) {
             ctx.addIssue({
                 code: "custom",
                 path: ["fotoUrl"],
