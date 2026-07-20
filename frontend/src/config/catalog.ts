@@ -107,7 +107,7 @@ export const PAQUETES_BASE: Record<PaqueteBase, string> = {
     SOLO_WORKSHOPS: "Training Pass",
     // TEMPORAL: solo para probar el flujo de pago en producción. Quitar esta
     // entrada (y las demás marcadas TEMPORAL en este archivo) una vez confirmado.
-    PRUEBA_PAGO: "Prueba de Pago ($2 MXN)",
+    PRUEBA_PAGO: "Prueba de Pago ($10 MXN)",
 };
 
 export const PAQUETES_BASE_DESCRIPCION: Record<PaqueteBase, string> = {
@@ -126,7 +126,7 @@ export const PAQUETES_BASE_DESCRIPCION: Record<PaqueteBase, string> = {
 export const PAQUETES_COMPETIDOR: PaqueteBase[] = ["COMPETIDOR", "BOSS_EXPERIENCE", "BOSS_VIP", "SOLO_WORKSHOPS"];
 
 // Paquetes que solo puede elegir quien se registra como público.
-// PRUEBA_PAGO es temporal: paquete de $2 MXN para validar el flujo de pago
+// PRUEBA_PAGO es temporal: paquete de $10 MXN para validar el flujo de pago
 // en producción. Quitar de aquí una vez confirmado.
 export const PAQUETES_PUBLICO: PaqueteBase[] = ["PUBLICO_GENERAL", "VIP_EXPERIENCE", "PRUEBA_PAGO"];
 
@@ -186,7 +186,7 @@ export const PRECIO_MXN_CENTAVOS_POR_PAQUETE_BASE: Record<PaqueteBase, number> =
     BOSS_EXPERIENCE: 120000,
     BOSS_VIP: 150000,
     SOLO_WORKSHOPS: 0,
-    PRUEBA_PAGO: 200, // TEMPORAL: $2.00 MXN, solo para probar el flujo de pago en producción
+    PRUEBA_PAGO: 1000, // TEMPORAL: $10.00 MXN (mínimo permitido por Stripe para MXN), solo para probar el flujo de pago en producción
 };
 
 export const PRECIO_MXN_CENTAVOS_WORKSHOP_INDIVIDUAL = 25000;

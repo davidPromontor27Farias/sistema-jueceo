@@ -81,7 +81,7 @@ export const PAQUETES_BASE_LABEL: Record<PaqueteBase, string> = {
     BOSS_VIP: "The Boss VIP",
     SOLO_WORKSHOPS: "Training Pass",
     // TEMPORAL: solo para probar el flujo de pago en producción.
-    PRUEBA_PAGO: "Prueba de Pago ($2 MXN)",
+    PRUEBA_PAGO: "Prueba de Pago ($10 MXN)",
 };
 
 // Paquetes que solo puede elegir quien se registra como competidor.
@@ -93,7 +93,7 @@ export const PAQUETES_COMPETIDOR: PaqueteBase[] = [
 ];
 
 // Paquetes que solo puede elegir quien se registra como público.
-// PRUEBA_PAGO es temporal: paquete de $2 MXN para validar el flujo de pago
+// PRUEBA_PAGO es temporal: paquete de $10 MXN para validar el flujo de pago
 // en producción. Quitar de aquí (y de PRECIO_MXN_CENTAVOS_POR_PAQUETE_BASE /
 // PAQUETES_BASE_LABEL) una vez confirmado.
 export const PAQUETES_PUBLICO: PaqueteBase[] = ["PUBLICO_GENERAL", "VIP_EXPERIENCE", "PRUEBA_PAGO"];
@@ -152,7 +152,7 @@ export const PRECIO_MXN_CENTAVOS_POR_PAQUETE_BASE: Record<PaqueteBase, number> =
     BOSS_EXPERIENCE: 120000, // Competencia + 3 workshops: $1,200.00 MXN
     BOSS_VIP: 150000, // THE BOSS VIP (incluye lo que antes era "Pro Package"): $1,500.00 MXN
     SOLO_WORKSHOPS: 0, // sin precio fijo, se calcula por workshop, ver calcularPrecioTotal
-    PRUEBA_PAGO: 200, // TEMPORAL: $2.00 MXN, solo para probar el flujo de pago en producción
+    PRUEBA_PAGO: 1000, // TEMPORAL: $10.00 MXN (mínimo permitido por Stripe para MXN), solo para probar el flujo de pago en producción
 };
 
 export const PRECIO_MXN_CENTAVOS_WORKSHOP_INDIVIDUAL = 25000; // $250.00 MXN c/u
