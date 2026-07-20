@@ -104,7 +104,7 @@ export const PAQUETES_BASE: Record<PaqueteBase, string> = {
     VIP_EXPERIENCE: "VIP Experience",
     BOSS_EXPERIENCE: "The Boss Experience",
     BOSS_VIP: "The Boss VIP",
-    SOLO_WORKSHOPS: "Training Pass",
+    SOLO_WORKSHOPS: "Workshops",
     // TEMPORAL: solo para probar el flujo de pago en producción. Quitar esta
     // entrada (y las demás marcadas TEMPORAL en este archivo) una vez confirmado.
     PRUEBA_PAGO: "Prueba de Pago ($10 MXN)",
@@ -130,6 +130,7 @@ export const PAQUETES_COMPETIDOR: PaqueteBase[] = [
     "COMPETIDOR",
     "BOSS_EXPERIENCE",
     "BOSS_VIP",
+    "SOLO_WORKSHOPS",
     "PRUEBA_PAGO",
 ];
 

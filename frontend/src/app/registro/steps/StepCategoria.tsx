@@ -209,7 +209,7 @@ export function StepCategoria() {
                         return (
                             <li key={key}>
                                 <div className="flex justify-between gap-3">
-                                    <span>{label}{key === "SOLO_WORKSHOPS" ? " (desde)" : ""}</span>
+                                    <span>{label}</span>
                                     <span className="flex items-center gap-2">
                                         {conDescuento && (
                                             <span className="text-xs text-boss-gray line-through">
@@ -219,13 +219,13 @@ export function StepCategoria() {
                                         <span className="text-boss-green">{formatearMXN(precioPaquete(key))}</span>
                                     </span>
                                 </div>
-                                <p className="text-xs text-boss-gray">{PAQUETES_BASE_DESCRIPCION[key]}</p>
+                                <p className="mt-1 text-sm text-boss-gray">{PAQUETES_BASE_DESCRIPCION[key]}</p>
                             </li>
                         );
                     })}
                     {!esPublico && (
-                        <li className="pt-1 text-xs text-boss-gray">
-                            Workshop individual {formatearMXN(PRECIO_MXN_CENTAVOS_WORKSHOP_INDIVIDUAL)} c/u, o los 3
+                        <li className="text-sm text-boss-gray">
+                            Workshop individual {formatearMXN(PRECIO_MXN_CENTAVOS_WORKSHOP_INDIVIDUAL)}, o los 3
                             por{" "}
                             {preventaActiva ? (
                                 <>
@@ -243,14 +243,17 @@ export function StepCategoria() {
                         </li>
                     )}
                     {!esPublico && (
-                        <li className="space-y-1.5 pt-2 text-sm text-boss-gray">
+                        <li className="space-y-1.5 text-sm text-boss-gray">
                             <p>Workshop 1 - Footwork y Transiciones</p>
                             <p>Workshop 2 - Powermoves</p>
                             <p>Workshop 3 - Fundamentos y Estrategias</p>
-                            <p>Impartidos por referentes internacionales de BC One – Reveal próximamente</p>
+                            <p>
+                                Impartidos por referentes internacionales de BC One –{" "}
+                                <span className="text-white">Reveal próximamente</span>
+                            </p>
                             <p>
                                 Los workshops serán el sábado 31 de octubre a partir de las 10am. Duración
-                                aproximada 1.5hrs.
+                                aproximada 1.5hrs cada workshop.
                             </p>
                         </li>
                     )}
