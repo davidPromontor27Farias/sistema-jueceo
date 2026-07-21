@@ -66,8 +66,7 @@ export type PaqueteBase =
     | "VIP_EXPERIENCE"
     | "BOSS_EXPERIENCE"
     | "BOSS_VIP"
-    | "SOLO_WORKSHOPS"
-    | "PRUEBA_PAGO";
+    | "SOLO_WORKSHOPS";
 
 export type TipoParticipacion = "COMPETIDOR" | "PUBLICO";
 
@@ -105,9 +104,6 @@ export const PAQUETES_BASE: Record<PaqueteBase, string> = {
     BOSS_EXPERIENCE: "The Boss Experience",
     BOSS_VIP: "The Boss VIP",
     SOLO_WORKSHOPS: "Workshops",
-    // TEMPORAL: solo para probar el flujo de pago en producción. Quitar esta
-    // entrada (y las demás marcadas TEMPORAL en este archivo) una vez confirmado.
-    PRUEBA_PAGO: "Prueba de Pago ($10 MXN)",
 };
 
 export const PAQUETES_BASE_DESCRIPCION: Record<PaqueteBase, string> = {
@@ -120,25 +116,13 @@ export const PAQUETES_BASE_DESCRIPCION: Record<PaqueteBase, string> = {
         "Inscripción a 1 categoría + 3 workshops / Meet & Greet / Foto profesional / Fila rápida / Poster oficial / Lanyard VIP / Zona preferencial / Playera oficial / Bebida energetizante.",
     SOLO_WORKSHOPS:
         "En la selección de 3 workshops recibe un descuento de $150. Y para los primeros 50 lugares un descuento adicional del 20%. Total $480.00",
-    PRUEBA_PAGO: "SOLO PARA PRUEBAS: valida que la pasarela de pagos (Stripe) funcione en producción, tanto para público como para competidores.",
 };
 
 // Paquetes que solo puede elegir quien se registra como competidor.
-// PRUEBA_PAGO es temporal: mismo paquete de $10 MXN de pruebas, habilitado
-// también aquí para validar el flujo de pago de competidores. Quitar de aquí
-// una vez confirmado.
-export const PAQUETES_COMPETIDOR: PaqueteBase[] = [
-    "COMPETIDOR",
-    "BOSS_EXPERIENCE",
-    "BOSS_VIP",
-    "SOLO_WORKSHOPS",
-    "PRUEBA_PAGO",
-];
+export const PAQUETES_COMPETIDOR: PaqueteBase[] = ["COMPETIDOR", "BOSS_EXPERIENCE", "BOSS_VIP", "SOLO_WORKSHOPS"];
 
 // Paquetes que solo puede elegir quien se registra como público.
-// PRUEBA_PAGO es temporal: paquete de $10 MXN para validar el flujo de pago
-// en producción. Quitar de aquí una vez confirmado.
-export const PAQUETES_PUBLICO: PaqueteBase[] = ["PUBLICO_GENERAL", "VIP_EXPERIENCE", "PRUEBA_PAGO"];
+export const PAQUETES_PUBLICO: PaqueteBase[] = ["PUBLICO_GENERAL", "VIP_EXPERIENCE"];
 
 // Debe coincidir exactamente con backend/src/config/catalog.ts
 // PENDIENTE: confirmar con el cliente la matriz completa de reglas sexo+edad.
@@ -196,7 +180,6 @@ export const PRECIO_MXN_CENTAVOS_POR_PAQUETE_BASE: Record<PaqueteBase, number> =
     BOSS_EXPERIENCE: 120000,
     BOSS_VIP: 150000,
     SOLO_WORKSHOPS: 0,
-    PRUEBA_PAGO: 1000, // TEMPORAL: $10.00 MXN (mínimo permitido por Stripe para MXN), solo para probar el flujo de pago en producción
 };
 
 export const PRECIO_MXN_CENTAVOS_WORKSHOP_INDIVIDUAL = 25000;

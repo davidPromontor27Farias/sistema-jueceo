@@ -54,8 +54,9 @@ enum PaqueteBase {
   BOSS_EXPERIENCE
   BOSS_VIP
   SOLO_WORKSHOPS
-  // TEMPORAL: paquete de $2 MXN solo para validar el flujo de pago con Stripe
-  // en producción. Eliminar (y su migración) una vez confirmado.
+  // DEPRECATED: ya no es seleccionable (quitado de PAQUETES_COMPETIDOR/PAQUETES_PUBLICO
+  // en backend/frontend catalog.ts). Se conserva en el enum porque hay registros de
+  // prueba existentes con este valor; no quitar sin antes migrar/borrar esas filas.
   PRUEBA_PAGO
 }
 
