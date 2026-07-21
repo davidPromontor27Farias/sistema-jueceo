@@ -18,7 +18,7 @@ export function descargarInvitacionCalendario(competidorId: string | null): void
         "VERSION:2.0",
         "PRODID:-//THE BOSS//Registro//ES",
         "BEGIN:VEVENT",
-        `UID:${crypto.randomUUID()}@thebossbattle`,
+        `UID:${crypto.randomUUID()}@thebossbreaking`,
         `DTSTAMP:${formatearFechaICS(new Date())}`,
         `DTSTART:${formatearFechaICS(EVENTO_INICIO_ICS)}`,
         `DTEND:${formatearFechaICS(EVENTO_FIN_ICS)}`,

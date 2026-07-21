@@ -7,7 +7,8 @@ import { getRegistrationBySession } from "@/lib/api";
 import { EVENTO_FECHA_LABEL, EVENTO_UBICACION } from "@/config/catalog";
 import { CalendarIcon, CrownIcon, FacebookIcon, InstagramIcon, PdfIcon, PinIcon, ShareIcon, WhatsappIcon } from "./icons";
 import { descargarInvitacionCalendario } from "./calendario";
-import { compartirFacebook, compartirInstagram, compartirNativo, compartirWhatsapp } from "./compartir";
+import { compartirFacebook, compartirInstagram, compartirNativo, compartirWhatsapp, generarImagenTarjeta } from "./compartir";
+import TarjetaCompartir from "./TarjetaCompartir";
 
 type EstadoConsulta =
     | { fase: "cargando" }
@@ -33,7 +34,9 @@ export default function QrStatus() {
         sessionId ? { fase: "cargando" } : { fase: "error", mensaje: "Falta la referencia de pago en la URL." },
     );
     const [generandoPdf, setGenerandoPdf] = useState(false);
+    const [compartiendo, setCompartiendo] = useState(false);
     const intentos = useRef(0);
+    const tarjetaCompartirRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         if (!sessionId) return;
@@ -134,8 +137,35 @@ export default function QrStatus() {
         }
     }
 
+    async function conImagenParaCompartir(accion: (archivo: File | null) => Promise<void>) {
+        if (compartiendo) return;
+        setCompartiendo(true);
+        try {
+            const archivo = tarjetaCompartirRef.current ? await generarImagenTarjeta(tarjetaCompartirRef.current) : null;
+            await accion(archivo);
+        } catch (error) {
+            console.error("Error generando la imagen para compartir", error);
+            await accion(null);
+        } finally {
+            setCompartiendo(false);
+        }
+    }
+
     return (
         <div className="mt-6 w-full max-w-2xl text-center">
+            {/* Fuera de pantalla: se captura como imagen para compartir, sin el QR. */}
+            <div className="pointer-events-none fixed left-[-9999px] top-0" aria-hidden="true">
+                <div ref={tarjetaCompartirRef}>
+                    <TarjetaCompartir
+                        esPublico={esPublico}
+                        nombreArtistico={estado.nombreArtistico}
+                        categoriaLabel={estado.categoriaLabel}
+                        competidorId={estado.competidorId}
+                        fotoUrl={estado.fotoUrl}
+                    />
+                </div>
+            </div>
+
             <h2 className="font-display text-3xl uppercase tracking-wide text-white">¡Bienvenido a THE BOSS!</h2>
             <p className="mt-1 text-sm text-boss-gray">Tu registro ha sido confirmado.</p>
 
@@ -263,16 +293,18 @@ export default function QrStatus() {
                     <button
                         type="button"
                         aria-label="Compartir en Instagram"
-                        onClick={() => compartirInstagram(estado.nombreArtistico)}
-                        className="rounded-full border border-boss-border p-2 text-white transition-colors hover:border-boss-red hover:text-boss-red"
+                        disabled={compartiendo}
+                        onClick={() => conImagenParaCompartir((archivo) => compartirInstagram(estado.nombreArtistico, archivo))}
+                        className="rounded-full border border-boss-border p-2 text-white transition-colors hover:border-boss-red hover:text-boss-red disabled:cursor-wait disabled:opacity-50"
                     >
                         <InstagramIcon className="h-4 w-4" />
                     </button>
                     <button
                         type="button"
                         aria-label="Compartir en WhatsApp"
-                        onClick={() => compartirWhatsapp(estado.nombreArtistico)}
-                        className="rounded-full border border-boss-border p-2 text-white transition-colors hover:border-boss-red hover:text-boss-red"
+                        disabled={compartiendo}
+                        onClick={() => conImagenParaCompartir((archivo) => compartirWhatsapp(estado.nombreArtistico, archivo))}
+                        className="rounded-full border border-boss-border p-2 text-white transition-colors hover:border-boss-red hover:text-boss-red disabled:cursor-wait disabled:opacity-50"
                     >
                         <WhatsappIcon className="h-4 w-4" />
                     </button>
@@ -287,8 +319,9 @@ export default function QrStatus() {
                     <button
                         type="button"
                         aria-label="Compartir"
-                        onClick={() => compartirNativo(estado.nombreArtistico)}
-                        className="rounded-full border border-boss-border p-2 text-white transition-colors hover:border-boss-red hover:text-boss-red"
+                        disabled={compartiendo}
+                        onClick={() => conImagenParaCompartir((archivo) => compartirNativo(estado.nombreArtistico, archivo))}
+                        className="rounded-full border border-boss-border p-2 text-white transition-colors hover:border-boss-red hover:text-boss-red disabled:cursor-wait disabled:opacity-50"
                     >
                         <ShareIcon className="h-4 w-4" />
                     </button>
@@ -296,7 +329,7 @@ export default function QrStatus() {
             </div>
 
             <div className="mt-10 flex items-center justify-between border-t border-boss-border pt-4 text-sm uppercase tracking-wide text-boss-gray">
-                <span>thebossbattle.com</span>
+                <span>thebossbreaking.com</span>
                 <span>
                     Powered by <span className="font-semibold text-white">IDEK</span>
                 </span>

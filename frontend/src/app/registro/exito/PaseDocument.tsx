@@ -214,7 +214,7 @@ export function PaseDocument({ esPublico, nombreArtistico, categoriaLabel, compe
                     </View>
                 </View>
 
-                <Text style={styles.avisoFinal}>#WhoWillBeTheBoss · thebossbattle.com</Text>
+                <Text style={styles.avisoFinal}>#WhoWillBeTheBoss · thebossbreaking.com</Text>
             </Page>
         </Document>
     );

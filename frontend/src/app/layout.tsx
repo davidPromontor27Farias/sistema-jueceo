@@ -15,6 +15,7 @@ const barlowCondensed = Barlow_Condensed({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://thebossbreaking.com"),
   title: "THE BOSS — Breaking Battles",
   description: "Registro oficial de competidores para THE BOSS Breaking Battles",
 };

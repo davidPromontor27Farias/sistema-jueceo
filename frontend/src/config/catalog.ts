@@ -9,6 +9,9 @@ export const EVENTO_DIA_2_LABEL = "1 NOV";
 export const EVENTO_INICIO_ICS = new Date("2026-10-31T12:00:00-06:00");
 export const EVENTO_FIN_ICS = new Date("2026-11-01T21:00:00-06:00");
 
+export const SITIO_URL = "https://thebossbreaking.com";
+export const URL_REGISTRO = `${SITIO_URL}/registro`;
+
 export const ESTADOS_MEXICO = [
     "Aguascalientes",
     "Baja California",
