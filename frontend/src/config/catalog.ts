@@ -1,3 +1,14 @@
+// Datos del evento para el pase de confirmación, el PDF descargable y el
+// archivo .ics de "Agregar al calendario". Debe coincidir con las fechas
+// mostradas en content/privacidad.md y content/reglamento.md.
+export const EVENTO_NOMBRE = "THE BOSS — Breaking Event";
+export const EVENTO_UBICACION = "CDMX";
+export const EVENTO_FECHA_LABEL = "31 OCT Y 1 NOV";
+export const EVENTO_DIA_1_LABEL = "31 OCT";
+export const EVENTO_DIA_2_LABEL = "1 NOV";
+export const EVENTO_INICIO_ICS = new Date("2026-10-31T12:00:00-06:00");
+export const EVENTO_FIN_ICS = new Date("2026-11-01T21:00:00-06:00");
+
 export const ESTADOS_MEXICO = [
     "Aguascalientes",
     "Baja California",
