@@ -42,6 +42,8 @@ registrationsRouter.get("/by-session/:sessionId", registrationStatusLimiter, asy
     const registration = await prisma.registration.findUnique({
         where: { stripeSessionId: sessionId },
         select: {
+            nombres: true,
+            apellidos: true,
             nombreArtistico: true,
             tipoBoleto: true,
             categoria: true,
@@ -64,6 +66,8 @@ registrationsRouter.get("/by-session/:sessionId", registrationStatusLimiter, asy
 
     return res.json({
         estatusPago: registration.estatusPago,
+        nombres: registration.nombres,
+        apellidos: registration.apellidos,
         nombreArtistico: registration.nombreArtistico,
         tipoBoleto: registration.tipoBoleto,
         categoria: registration.categoria,

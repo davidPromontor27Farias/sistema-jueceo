@@ -113,20 +113,9 @@ export function tipoBoletoPorCategoria(categoria: Categoria): TipoBoleto {
     return categoria === "PUBLICO_GENERAL" ? "GENERAL" : "COMPETIDOR";
 }
 
-// PENDIENTE: confirmar prefijos finales con el cliente. Se usan para el ID fijo de
-// competidor (ej. "BB-023") asignado al confirmarse el pago, ver backend/src/routes/stripeWebhook.ts
-export const PREFIJO_ID_POR_CATEGORIA: Record<Categoria, string> = {
-    KIDS_AMATEUR: "KA",
-    KIDS_BOYS: "KB",
-    KIDS_GIRL: "KG",
-    JUVENIL_BOYS: "JB",
-    JUVENIL_GIRL: "JG",
-    BGIRLS: "BG",
-    BBOYS: "BB",
-    MASTERS_40_PLUS: "MS",
-    PUBLICO_GENERAL: "PG",
-    OPEN_STYLE_1V1: "OS",
-};
+// Prefijo único del ID fijo de competidor (ej. "THB-023") asignado al confirmarse
+// el pago, igual para todas las categorías, ver backend/src/routes/stripeWebhook.ts
+export const PREFIJO_ID_COMPETIDOR = "THB";
 
 // PENDIENTE: lista real de academias/crews del cliente. Placeholder de ejemplo
 // para el picklist con opción "Otra... (escribir)" en el formulario.

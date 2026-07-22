@@ -4,11 +4,9 @@ import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { getRegistrationBySession } from "@/lib/api";
-import { EVENTO_FECHA_LABEL, EVENTO_UBICACION } from "@/config/catalog";
-import { CalendarIcon, CrownIcon, FacebookIcon, InstagramIcon, PdfIcon, PinIcon, ShareIcon, WhatsappIcon } from "./icons";
+import { EVENTO_DIA_1_LABEL, EVENTO_DIA_2_LABEL, EVENTO_UBICACION } from "@/config/catalog";
+import { CalendarIcon, CrownIcon, PdfIcon, PinIcon, TigerClawIcon } from "./icons";
 import { descargarInvitacionCalendario } from "./calendario";
-import { compartirFacebook, compartirInstagram, compartirNativo, compartirWhatsapp, generarImagenTarjeta } from "./compartir";
-import TarjetaCompartir from "./TarjetaCompartir";
 
 type EstadoConsulta =
     | { fase: "cargando" }
@@ -17,6 +15,7 @@ type EstadoConsulta =
     | {
           fase: "listo";
           nombreArtistico: string;
+          nombreCompleto: string;
           categoriaLabel: string;
           tipoBoleto: string;
           competidorId: string | null;
@@ -34,9 +33,7 @@ export default function QrStatus() {
         sessionId ? { fase: "cargando" } : { fase: "error", mensaje: "Falta la referencia de pago en la URL." },
     );
     const [generandoPdf, setGenerandoPdf] = useState(false);
-    const [compartiendo, setCompartiendo] = useState(false);
     const intentos = useRef(0);
-    const tarjetaCompartirRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         if (!sessionId) return;
@@ -59,6 +56,7 @@ export default function QrStatus() {
                 setEstado({
                     fase: "listo",
                     nombreArtistico: data.nombreArtistico ?? "",
+                    nombreCompleto: [data.nombres, data.apellidos].filter(Boolean).join(" "),
                     categoriaLabel: data.categoriaLabel ?? data.tipoBoleto ?? "",
                     tipoBoleto: data.tipoBoleto ?? "",
                     competidorId: data.competidorId ?? null,
@@ -117,6 +115,7 @@ export default function QrStatus() {
                 <PaseDocument
                     esPublico={esPublico}
                     nombreArtistico={estado.nombreArtistico}
+                    nombreCompleto={estado.nombreCompleto}
                     categoriaLabel={estado.categoriaLabel}
                     competidorId={estado.competidorId}
                     qrDataUrl={estado.qrDataUrl}
@@ -137,35 +136,8 @@ export default function QrStatus() {
         }
     }
 
-    async function conImagenParaCompartir(accion: (archivo: File | null) => Promise<void>) {
-        if (compartiendo) return;
-        setCompartiendo(true);
-        try {
-            const archivo = tarjetaCompartirRef.current ? await generarImagenTarjeta(tarjetaCompartirRef.current) : null;
-            await accion(archivo);
-        } catch (error) {
-            console.error("Error generando la imagen para compartir", error);
-            await accion(null);
-        } finally {
-            setCompartiendo(false);
-        }
-    }
-
     return (
         <div className="mt-6 w-full max-w-2xl text-center">
-            {/* Fuera de pantalla: se captura como imagen para compartir, sin el QR. */}
-            <div className="pointer-events-none fixed left-[-9999px] top-0" aria-hidden="true">
-                <div ref={tarjetaCompartirRef}>
-                    <TarjetaCompartir
-                        esPublico={esPublico}
-                        nombreArtistico={estado.nombreArtistico}
-                        categoriaLabel={estado.categoriaLabel}
-                        competidorId={estado.competidorId}
-                        fotoUrl={estado.fotoUrl}
-                    />
-                </div>
-            </div>
-
             <h2 className="font-display text-3xl uppercase tracking-wide text-white">¡Bienvenido a THE BOSS!</h2>
             <p className="mt-1 text-sm text-boss-gray">Tu registro ha sido confirmado.</p>
 
@@ -180,6 +152,9 @@ export default function QrStatus() {
             </p>
 
             <div className="relative mt-8 overflow-hidden rounded-2xl border border-boss-border bg-boss-panel text-left">
+                <div className="absolute -left-7 top-1/2 h-14 w-14 -translate-y-1/2 rounded-full border border-boss-border bg-boss-black" />
+                <div className="absolute -right-7 top-1/2 h-14 w-14 -translate-y-1/2 rounded-full border border-boss-border bg-boss-black" />
+
                 <div className="pointer-events-none absolute -right-14 top-5 w-44 rotate-45 bg-boss-red py-1.5 text-center text-sm font-semibold uppercase tracking-widest text-white">
                     2026 Edition
                 </div>
@@ -192,33 +167,53 @@ export default function QrStatus() {
                     </p>
                 </div>
 
-                <div className="grid grid-cols-1 gap-6 p-6 md:grid-cols-[1fr_auto_1fr] md:gap-6">
-                    <div className="flex items-stretch gap-5">
-                        {estado.fotoUrl && (
-                            <Image
-                                src={estado.fotoUrl}
-                                alt={`Foto de ${estado.nombreArtistico}`}
-                                width={160}
-                                height={220}
-                                unoptimized
-                                className="h-full w-40 shrink-0 rounded-lg border border-boss-border object-cover"
-                            />
-                        )}
-                        <div className="flex flex-col items-start">
-                            <p className="text-sm font-semibold uppercase tracking-widest text-boss-red">
-                                {esPublico ? "Público general" : "Competidor"}
-                            </p>
-                            <p className="mt-1 font-display text-3xl uppercase text-white">{estado.nombreArtistico}</p>
-                            <p className="mt-4 text-sm font-semibold uppercase tracking-widest text-boss-red">Categoría</p>
-                            <p className="mt-1 text-lg uppercase text-white">{estado.categoriaLabel}</p>
-                            {estado.competidorId && (
-                                <>
-                                    <p className="mt-4 text-sm font-semibold uppercase tracking-widest text-boss-red">
-                                        {esPublico ? "ID de acceso" : "Competidor ID"}
-                                    </p>
-                                    <p className="mt-1 font-display text-2xl text-boss-green">{estado.competidorId}</p>
-                                </>
+                <div className="grid grid-cols-1 gap-6 py-6 pl-10 pr-6 md:grid-cols-[1fr_auto_1fr] md:gap-6">
+                    <div className="flex flex-col gap-4">
+                        <div className="flex items-stretch gap-5">
+                            {estado.fotoUrl && (
+                                <Image
+                                    src={estado.fotoUrl}
+                                    alt={`Foto de ${estado.nombreArtistico}`}
+                                    width={160}
+                                    height={220}
+                                    unoptimized
+                                    className="h-full w-40 shrink-0 rounded-lg border border-boss-border object-cover"
+                                />
                             )}
+                            <div className="flex flex-col items-start">
+                                <p className="text-sm font-semibold uppercase tracking-widest text-boss-red">
+                                    {esPublico ? "Público general" : "Competidor"}
+                                </p>
+                                {estado.nombreArtistico ? (
+                                    <>
+                                        <p className="mt-1 font-display text-3xl uppercase text-white">{estado.nombreArtistico}</p>
+                                        <p className="text-lg text-boss-gray">{estado.nombreCompleto}</p>
+                                    </>
+                                ) : (
+                                    <p className="mt-1 font-display text-3xl uppercase text-white">{estado.nombreCompleto}</p>
+                                )}
+                                <p className="mt-4 text-sm font-semibold uppercase tracking-widest text-boss-red">Categoría</p>
+                                <p className="mt-1 text-lg uppercase text-white">{estado.categoriaLabel}</p>
+                                {estado.competidorId && (
+                                    <>
+                                        <p className="mt-4 text-sm font-semibold uppercase tracking-widest text-boss-red">
+                                            {esPublico ? "ID de acceso" : "Competidor ID"}
+                                        </p>
+                                        <p className="mt-1 font-display text-2xl text-boss-green">{estado.competidorId}</p>
+                                    </>
+                                )}
+                            </div>
+                        </div>
+
+                        <div className="flex items-center gap-3 border-t border-dashed border-boss-border pt-4 text-base uppercase tracking-widest text-boss-gray">
+                            <span className="flex items-center gap-2">
+                                <CalendarIcon className="h-5 w-5" /> {EVENTO_DIA_1_LABEL}
+                            </span>
+                            <span className="text-boss-border">|</span>
+                            <span>{EVENTO_DIA_2_LABEL}</span>
+                            <span className="flex items-center gap-2">
+                                <PinIcon className="h-5 w-5" /> {EVENTO_UBICACION}
+                            </span>
                         </div>
                     </div>
 
@@ -254,17 +249,10 @@ export default function QrStatus() {
                     </div>
                 </div>
 
-                <div className="flex items-center justify-between border-t border-dashed border-boss-border px-6 py-3 text-sm uppercase tracking-widest text-boss-gray">
-                    <span className="flex items-center gap-2">
-                        <CalendarIcon className="h-4 w-4" /> {EVENTO_FECHA_LABEL}
-                    </span>
-                    <span className="flex items-center gap-2">
-                        <PinIcon className="h-4 w-4" /> {EVENTO_UBICACION}
-                    </span>
-                </div>
-
-                <div className="bg-boss-red py-2 text-center font-display text-base uppercase tracking-[0.3em] text-boss-black">
-                    Who&apos;ll be the Boss?
+                <div className="flex items-center justify-center gap-5 bg-boss-red py-2 text-center font-display text-base uppercase tracking-[0.3em] text-boss-black">
+                    <TigerClawIcon className="h-6 w-9 shrink-0 text-boss-black/70" />
+                    <span>Who&apos;ll be the Boss?</span>
+                    <TigerClawIcon className="h-6 w-9 shrink-0 -scale-x-100 text-boss-black/70" />
                 </div>
             </div>
 
@@ -273,59 +261,17 @@ export default function QrStatus() {
                     type="button"
                     onClick={handleDescargarPdf}
                     disabled={generandoPdf}
-                    className="flex items-center justify-center gap-2 rounded-md border border-boss-border px-4 py-3 text-sm font-semibold uppercase tracking-wide text-white transition-colors hover:border-boss-green hover:text-boss-green disabled:cursor-wait disabled:opacity-50"
+                    className="flex items-center justify-center gap-3 rounded-md border-2 border-red-600 px-5 py-3 text-lg font-bold uppercase tracking-wide text-white shadow-[0_0_8px_rgba(220,38,38,0.9),0_0_18px_rgba(220,38,38,0.6),0_0_32px_rgba(220,38,38,0.4)] transition-all hover:shadow-[0_0_12px_rgba(220,38,38,1),0_0_28px_rgba(220,38,38,0.8),0_0_48px_rgba(220,38,38,0.5)] disabled:cursor-wait disabled:opacity-50"
                 >
-                    <PdfIcon className="h-5 w-5" /> {generandoPdf ? "Generando..." : "Descargar Pase Oficial (PDF)"}
+                    <PdfIcon className="h-7 w-7" /> {generandoPdf ? "Generando..." : "Descargar Pase Oficial (PDF)"}
                 </button>
                 <button
                     type="button"
                     onClick={() => descargarInvitacionCalendario(estado.competidorId)}
-                    className="flex items-center justify-center gap-2 rounded-md border border-boss-border px-4 py-3 text-sm font-semibold uppercase tracking-wide text-white transition-colors hover:border-boss-green hover:text-boss-green"
+                    className="flex items-center justify-center gap-3 rounded-md border-2 border-red-600 px-5 py-3 text-lg font-bold uppercase tracking-wide text-white shadow-[0_0_8px_rgba(220,38,38,0.9),0_0_18px_rgba(220,38,38,0.6),0_0_32px_rgba(220,38,38,0.4)] transition-all hover:shadow-[0_0_12px_rgba(220,38,38,1),0_0_28px_rgba(220,38,38,0.8),0_0_48px_rgba(220,38,38,0.5)]"
                 >
-                    <CalendarIcon className="h-5 w-5" /> Agregar al Calendario
+                    <CalendarIcon className="h-7 w-7" /> Agregar al Calendario
                 </button>
-            </div>
-
-            <div className="mt-8 flex flex-col items-center gap-3">
-                <p className="text-sm font-semibold uppercase tracking-widest text-white">Comparte tu registro</p>
-                <p className="text-base font-semibold text-boss-red">#WhoWillBeTheBoss</p>
-                <div className="flex items-center gap-3">
-                    <button
-                        type="button"
-                        aria-label="Compartir en Instagram"
-                        disabled={compartiendo}
-                        onClick={() => conImagenParaCompartir((archivo) => compartirInstagram(estado.nombreArtistico, archivo))}
-                        className="rounded-full border border-boss-border p-2 text-white transition-colors hover:border-boss-red hover:text-boss-red disabled:cursor-wait disabled:opacity-50"
-                    >
-                        <InstagramIcon className="h-4 w-4" />
-                    </button>
-                    <button
-                        type="button"
-                        aria-label="Compartir en WhatsApp"
-                        disabled={compartiendo}
-                        onClick={() => conImagenParaCompartir((archivo) => compartirWhatsapp(estado.nombreArtistico, archivo))}
-                        className="rounded-full border border-boss-border p-2 text-white transition-colors hover:border-boss-red hover:text-boss-red disabled:cursor-wait disabled:opacity-50"
-                    >
-                        <WhatsappIcon className="h-4 w-4" />
-                    </button>
-                    <button
-                        type="button"
-                        aria-label="Compartir en Facebook"
-                        onClick={compartirFacebook}
-                        className="rounded-full border border-boss-border p-2 text-white transition-colors hover:border-boss-red hover:text-boss-red"
-                    >
-                        <FacebookIcon className="h-4 w-4" />
-                    </button>
-                    <button
-                        type="button"
-                        aria-label="Compartir"
-                        disabled={compartiendo}
-                        onClick={() => conImagenParaCompartir((archivo) => compartirNativo(estado.nombreArtistico, archivo))}
-                        className="rounded-full border border-boss-border p-2 text-white transition-colors hover:border-boss-red hover:text-boss-red disabled:cursor-wait disabled:opacity-50"
-                    >
-                        <ShareIcon className="h-4 w-4" />
-                    </button>
-                </div>
             </div>
 
             <div className="mt-10 flex items-center justify-between border-t border-boss-border pt-4 text-sm uppercase tracking-wide text-boss-gray">

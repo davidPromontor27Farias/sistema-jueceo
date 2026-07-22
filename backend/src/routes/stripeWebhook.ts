@@ -3,19 +3,52 @@ import Stripe from "stripe";
 import { stripe } from "../lib/stripe";
 import { prisma } from "../lib/prisma";
 import { randomUUID } from "node:crypto";
-import { PREFIJO_ID_POR_CATEGORIA, type Categoria } from "../config/catalog";
+import { PREFIJO_ID_COMPETIDOR } from "../config/catalog";
 
 const MAX_INTENTOS_ID = 5;
 
-// Asigna el ID fijo de competidor (ej. "BB-023") al confirmarse el pago.
+// PENDIENTE: caso especial pedido por el cliente. Estas dos personas deben
+// recibir siempre este número fijo, con el prefijo de la categoría en la que
+// se inscriban (igual que cualquier otro competidor). Quitar si el cliente
+// confirma que ya no aplica.
+const COMPETIDOR_ID_FIJO_POR_NOMBRE: Record<string, string> = {
+    "ethan ferrer": "008",
+    "kileab ferrer": "007",
+};
+
+function normalizarNombreCompleto(nombres: string, apellidos: string): string {
+    return `${nombres} ${apellidos}`
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, " ");
+}
+
+// Asigna el ID fijo de competidor (ej. "THB-023") al confirmarse el pago.
 // Si el correo ya tuvo un competidorId en un registro anterior (otro año), se
 // reutiliza el mismo para que el ID se mantenga fijo entre ediciones.
 async function confirmarPagoYAsignarCompetidorId(
     registrationId: string,
     correo: string,
-    categoria: Categoria,
     paymentIntentId: string | null,
+    nombres: string,
+    apellidos: string,
 ): Promise<void> {
+    const idFijo = COMPETIDOR_ID_FIJO_POR_NOMBRE[normalizarNombreCompleto(nombres, apellidos)];
+    if (idFijo) {
+        await prisma.registration.update({
+            where: { id: registrationId },
+            data: {
+                estatusPago: "PAGADO",
+                stripePaymentIntentId: paymentIntentId,
+                qrToken: randomUUID(),
+                competidorId: `${PREFIJO_ID_COMPETIDOR}-${idFijo}`,
+            },
+        });
+        return;
+    }
+
     const registroPrevio = await prisma.registration.findFirst({
         where: { correo, competidorId: { not: null }, id: { not: registrationId } },
         select: { competidorId: true },
@@ -35,12 +68,11 @@ async function confirmarPagoYAsignarCompetidorId(
         return;
     }
 
-    const prefijo = PREFIJO_ID_POR_CATEGORIA[categoria];
     for (let intento = 0; intento < MAX_INTENTOS_ID; intento++) {
         const cantidadExistente = await prisma.registration.count({
-            where: { competidorId: { startsWith: `${prefijo}-` } },
+            where: { competidorId: { startsWith: `${PREFIJO_ID_COMPETIDOR}-` } },
         });
-        const competidorId = `${prefijo}-${String(cantidadExistente + 1 + intento).padStart(3, "0")}`;
+        const competidorId = `${PREFIJO_ID_COMPETIDOR}-${String(cantidadExistente + 1 + intento).padStart(3, "0")}`;
 
         try {
             await prisma.registration.update({
@@ -60,7 +92,7 @@ async function confirmarPagoYAsignarCompetidorId(
         }
     }
 
-    throw new Error(`No se pudo asignar competidorId para el prefijo ${prefijo} tras ${MAX_INTENTOS_ID} intentos`);
+    throw new Error(`No se pudo asignar competidorId tras ${MAX_INTENTOS_ID} intentos`);
 }
 
 export const stripeWebhookRouter = Router();
@@ -101,7 +133,13 @@ stripeWebhookRouter.post(
 
             if(registration && registration.estatusPago !== "PAGADO"){
                 const paymentIntentId = typeof session.payment_intent === "string" ? session.payment_intent : (session.payment_intent?.id ?? null);
-                await confirmarPagoYAsignarCompetidorId(registrationId, registration.correo, registration.categoria, paymentIntentId);
+                await confirmarPagoYAsignarCompetidorId(
+                    registrationId,
+                    registration.correo,
+                    paymentIntentId,
+                    registration.nombres,
+                    registration.apellidos,
+                );
             }
         }
 

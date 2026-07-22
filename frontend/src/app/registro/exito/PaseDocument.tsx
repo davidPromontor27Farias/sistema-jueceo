@@ -1,4 +1,4 @@
-import { Document, Page, View, Text, Image, StyleSheet } from "@react-pdf/renderer";
+import { Document, Page, View, Text, Image, StyleSheet, Svg, Path, G } from "@react-pdf/renderer";
 import { EVENTO_FECHA_LABEL, EVENTO_UBICACION } from "@/config/catalog";
 
 // Usa las fuentes base14 estándar de PDF (Helvetica / Helvetica-Bold), ya
@@ -78,6 +78,11 @@ const styles = StyleSheet.create({
         marginTop: 2,
         letterSpacing: 0.5,
     },
+    valorSecundario: {
+        fontSize: 12,
+        color: GRIS,
+        marginTop: 1,
+    },
     valorVerde: {
         fontFamily: "Helvetica-Bold",
         fontSize: 14,
@@ -136,13 +141,21 @@ const styles = StyleSheet.create({
         marginHorizontal: -20,
         marginBottom: -20,
         paddingVertical: 8,
-        textAlign: "center",
+        paddingHorizontal: 10,
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "center",
     },
     bannerTexto: {
         fontFamily: "Helvetica-Bold",
         fontSize: 11,
         letterSpacing: 2,
         color: "#ffffff",
+        marginHorizontal: 16,
+    },
+    bannerGarra: {
+        width: 26,
+        height: 16,
     },
     avisoFinal: {
         fontSize: 8,
@@ -152,16 +165,29 @@ const styles = StyleSheet.create({
     },
 });
 
+function GarraTigre({ style, volteada }: { style: { width: number; height: number }; volteada?: boolean }) {
+    return (
+        <Svg viewBox="0 0 40 24" style={style}>
+            <G transform={volteada ? "translate(40 0) scale(-1 1) rotate(-8 20 12)" : "rotate(-8 20 12)"}>
+                <Path d="M0 2 C10 -0.5 30 -0.5 40 2 C30 4.5 10 4.5 0 2 Z" fill="#ffffff" fillOpacity={0.6} />
+                <Path d="M0 12 C10 9 30 9 40 12 C30 15 10 15 0 12 Z" fill="#ffffff" />
+                <Path d="M0 22 C10 19.5 30 19.5 40 22 C30 24.5 10 24.5 0 22 Z" fill="#ffffff" fillOpacity={0.6} />
+            </G>
+        </Svg>
+    );
+}
+
 export interface PasePdfDatos {
     esPublico: boolean;
     nombreArtistico: string;
+    nombreCompleto: string;
     categoriaLabel: string;
     competidorId: string | null;
     qrDataUrl: string;
     fotoUrl: string | null;
 }
 
-export function PaseDocument({ esPublico, nombreArtistico, categoriaLabel, competidorId, qrDataUrl, fotoUrl }: PasePdfDatos) {
+export function PaseDocument({ esPublico, nombreArtistico, nombreCompleto, categoriaLabel, competidorId, qrDataUrl, fotoUrl }: PasePdfDatos) {
     return (
         <Document>
             <Page size="A5" style={styles.page}>
@@ -183,7 +209,14 @@ export function PaseDocument({ esPublico, nombreArtistico, categoriaLabel, compe
                         <View style={styles.columnaIzq}>
                             {fotoUrl && <Image src={fotoUrl} style={styles.foto} />}
                             <Text style={styles.etiqueta}>{esPublico ? "PÚBLICO GENERAL" : "COMPETIDOR"}</Text>
-                            <Text style={styles.valor}>{nombreArtistico}</Text>
+                            {nombreArtistico ? (
+                                <>
+                                    <Text style={styles.valor}>{nombreArtistico}</Text>
+                                    <Text style={styles.valorSecundario}>{nombreCompleto}</Text>
+                                </>
+                            ) : (
+                                <Text style={styles.valor}>{nombreCompleto}</Text>
+                            )}
                             <Text style={styles.etiqueta}>CATEGORÍA</Text>
                             <Text style={styles.valor}>{categoriaLabel}</Text>
                             {competidorId && (
@@ -210,7 +243,9 @@ export function PaseDocument({ esPublico, nombreArtistico, categoriaLabel, compe
                     </View>
 
                     <View style={styles.banner}>
+                        <GarraTigre style={styles.bannerGarra} />
                         <Text style={styles.bannerTexto}>WHO&apos;LL BE THE BOSS?</Text>
+                        <GarraTigre style={styles.bannerGarra} volteada />
                     </View>
                 </View>
 

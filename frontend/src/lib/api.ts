@@ -50,6 +50,8 @@ export async function postRegistration(
 
 export type RegistrationBySession = {
     estatusPago?: "PENDIENTE" | "PAGADO" | "FALLIDO" | "REEMBOLSADO";
+    nombres?: string;
+    apellidos?: string;
     nombreArtistico?: string;
     tipoBoleto?: string;
     categoriaLabel?: string;
