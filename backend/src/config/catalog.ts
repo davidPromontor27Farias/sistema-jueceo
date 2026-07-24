@@ -137,24 +137,19 @@ export const PRECIO_MXN_CENTAVOS_WORKSHOP_BUNDLE_3 = 60000; // $600.00 MXN por l
 export const PRECIO_MXN_CENTAVOS_OPEN_STYLE_ADDON = 25000; // Agregar Open Style 1 vs 1: $250.00 MXN
 
 // --- Preventa Fundadores: 20% OFF ---
-// Aplica solo a The Boss Entry, The Boss Experience, Entrada General y al bundle
-// de 3 workshops. Únicamente a los primeros 50 lugares, durante julio o hasta
-// agotar existencias (lo que ocurra primero). Ver PREVENTA_CUPO_MAXIMO y el
-// conteo en backend/src/routes/registrations.ts.
+// Se aplica sobre el total completo de la compra (paquete base + workshops +
+// extras), no solo sobre el paquete base. Únicamente a los primeros 50 lugares
+// (contando también compras de solo workshops), durante julio o hasta agotar
+// existencias (lo que ocurra primero), y solo para los paquetes listados en
+// PAQUETES_CON_PREVENTA. Ver PREVENTA_CUPO_MAXIMO y el conteo en
+// backend/src/routes/registrations.ts.
 // PENDIENTE: confirmar con el cliente el año/fechas exactas si el evento se recorriera.
 export const PREVENTA_FECHA_INICIO = new Date("2026-07-01T00:00:00-06:00");
 export const PREVENTA_FECHA_FIN = new Date("2026-07-31T23:59:59-06:00");
 export const PREVENTA_CUPO_MAXIMO = 50;
+export const PREVENTA_PORCENTAJE_DESCUENTO = 0.2;
 
-export const PAQUETES_CON_PREVENTA: PaqueteBase[] = ["COMPETIDOR", "BOSS_EXPERIENCE", "PUBLICO_GENERAL"];
-
-export const PRECIO_MXN_CENTAVOS_POR_PAQUETE_BASE_PREVENTA: Partial<Record<PaqueteBase, number>> = {
-    COMPETIDOR: 48000, // $600 -> $480
-    BOSS_EXPERIENCE: 96000, // $1,200 -> $960
-    PUBLICO_GENERAL: 20000, // $250 -> $200
-};
-
-export const PRECIO_MXN_CENTAVOS_WORKSHOP_BUNDLE_3_PREVENTA = 48000; // $600 -> $480 (solo al elegir los 3)
+export const PAQUETES_CON_PREVENTA: PaqueteBase[] = ["COMPETIDOR", "BOSS_EXPERIENCE", "PUBLICO_GENERAL", "SOLO_WORKSHOPS"];
 
 export function preventaVigentePorFecha(ahora: Date = new Date()): boolean {
     return ahora >= PREVENTA_FECHA_INICIO && ahora <= PREVENTA_FECHA_FIN;
@@ -164,17 +159,10 @@ export function preventaVigentePorFecha(ahora: Date = new Date()): boolean {
 // nada extra por workshopsSeleccionados.
 const PAQUETES_CON_WORKSHOPS_INCLUIDOS: PaqueteBase[] = ["BOSS_EXPERIENCE", "BOSS_VIP"];
 
-function precioBaseEfectivo(paqueteBase: PaqueteBase, preventaActiva: boolean): number {
-    if (preventaActiva && PAQUETES_CON_PREVENTA.includes(paqueteBase)) {
-        return PRECIO_MXN_CENTAVOS_POR_PAQUETE_BASE_PREVENTA[paqueteBase] ?? PRECIO_MXN_CENTAVOS_POR_PAQUETE_BASE[paqueteBase];
-    }
-    return PRECIO_MXN_CENTAVOS_POR_PAQUETE_BASE[paqueteBase];
-}
-
-function precioWorkshops(workshopsSeleccionados: number[], preventaActiva: boolean): number {
+function precioWorkshops(workshopsSeleccionados: number[]): number {
     const cantidad = new Set(workshopsSeleccionados).size;
     if (cantidad >= 3) {
-        return preventaActiva ? PRECIO_MXN_CENTAVOS_WORKSHOP_BUNDLE_3_PREVENTA : PRECIO_MXN_CENTAVOS_WORKSHOP_BUNDLE_3;
+        return PRECIO_MXN_CENTAVOS_WORKSHOP_BUNDLE_3;
     }
     return cantidad * PRECIO_MXN_CENTAVOS_WORKSHOP_INDIVIDUAL;
 }
@@ -193,20 +181,22 @@ export function calcularPrecioTotal(
     workshopsSeleccionados: number[] = [],
     opciones: OpcionesPrecioTotal = {},
 ): number {
-    const preventaActiva = opciones.preventaActiva ?? false;
-    const precioBase = precioBaseEfectivo(paqueteBase, preventaActiva);
-
     let total: number;
     if (paqueteBase === "SOLO_WORKSHOPS") {
-        total = precioWorkshops(workshopsSeleccionados, preventaActiva);
+        total = precioWorkshops(workshopsSeleccionados);
     } else if (PAQUETES_CON_WORKSHOPS_INCLUIDOS.includes(paqueteBase)) {
-        total = precioBase;
+        total = PRECIO_MXN_CENTAVOS_POR_PAQUETE_BASE[paqueteBase];
     } else {
-        total = precioBase + precioWorkshops(workshopsSeleccionados, preventaActiva);
+        total = PRECIO_MXN_CENTAVOS_POR_PAQUETE_BASE[paqueteBase] + precioWorkshops(workshopsSeleccionados);
     }
 
     if (opciones.agregarOpenStyle) {
         total += PRECIO_MXN_CENTAVOS_OPEN_STYLE_ADDON;
+    }
+
+    const preventaActiva = opciones.preventaActiva ?? false;
+    if (preventaActiva && PAQUETES_CON_PREVENTA.includes(paqueteBase)) {
+        total = Math.round(total * (1 - PREVENTA_PORCENTAJE_DESCUENTO));
     }
 
     return total;

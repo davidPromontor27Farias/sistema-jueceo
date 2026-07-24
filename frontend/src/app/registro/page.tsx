@@ -6,8 +6,8 @@ import Image from "next/image";
 import { FormProvider, useForm, type FieldErrors } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { registrationFormSchema, type RegistrationFormValues } from "@/types/registrationForm";
-import { postRegistration, type RegistrationPayload } from "@/lib/api";
-import { preventaVigentePorFecha } from "@/config/catalog";
+import { postRegistration, type RegistrationPayload, type PreventaEstado } from "@/lib/api";
+import { usePreventaEstado } from "@/lib/usePreventaEstado";
 import { StepDatosPersonales } from "./steps/StepDatosPersonales";
 import { StepCategoria } from "./steps/StepCategoria";
 import { StepContacto } from "./steps/StepContacto";
@@ -34,6 +34,7 @@ const STEPS: { title: string; fields: FieldName[] }[] = [
 ];
 
 export default function RegistroPage() {
+    const preventaEstado = usePreventaEstado();
     const methods = useForm<z.input<typeof registrationFormSchema>, unknown, RegistrationFormValues>({
         mode: "onChange",
         resolver: zodResolver(registrationFormSchema),
@@ -107,13 +108,13 @@ export default function RegistroPage() {
 
     return (
         <main className="min-h-screen bg-boss-black lg:flex">
-            {currentStep === 0 && <BrandPanel />}
+            {currentStep === 0 && <BrandPanel preventaEstado={preventaEstado} />}
 
             <div className="px-4 py-12 sm:py-16 lg:flex lg:flex-1 lg:items-center lg:justify-center lg:px-12 lg:py-16">
                 <div className="mx-auto w-full max-w-2xl">
                     {currentStep === 0 && (
                         <div className="mb-8 flex flex-col items-center text-center lg:hidden">
-                            <HeroBody />
+                            <HeroBody preventaEstado={preventaEstado} />
                         </div>
                     )}
 
@@ -139,7 +140,7 @@ export default function RegistroPage() {
                                         {currentStep === 1 && <StepCategoria />}
                                         {currentStep === 2 && <StepContacto />}
                                         {currentStep === 3 && <StepLegal />}
-                                        {currentStep === 4 && <StepResumen />}
+                                        {currentStep === 4 && <StepResumen preventaEstado={preventaEstado} />}
                                     </div>
 
                                     <div className="mt-6 flex gap-3">
@@ -189,8 +190,8 @@ const RAZONES_PARA_INSCRIBIRTE = [
 // Bloque de marca (logo, mensaje de bienvenida y preventa). Se muestra una sola
 // vez, solo en el primer paso del registro, tanto en el panel lateral de
 // escritorio (BrandPanel) como arriba del formulario en móvil.
-function HeroBody() {
-    const preventaActiva = preventaVigentePorFecha();
+function HeroBody({ preventaEstado }: { preventaEstado: PreventaEstado | null }) {
+    const preventaActiva = preventaEstado?.activa ?? false;
 
     return (
         <>
@@ -229,9 +230,16 @@ function HeroBody() {
                         Preventa Fundadores · 20% OFF
                     </p>
                     <p className="mt-1 text-xs text-boss-gray">
-                        El descuento aplica automáticamente al seleccionar tu paquete. Únicamente a los primeros 50
-                        lugares. Solo durante julio o hasta agotar existencias. Aplica solo a The Boss Entry y
-                        Workshops.
+                        El 20% se descuenta sobre el total de tu compra (incluye workshops y extras) al seleccionar
+                        The Boss Entry, The Boss Experience, Entrada General o Workshops. Únicamente a los primeros 50
+                        lugares{" "}
+                        {typeof preventaEstado?.lugaresRestantes === "number" && (
+                            <>
+                                (quedan <span className="font-semibold text-boss-green">{preventaEstado.lugaresRestantes}</span>{" "}
+                                disponibles)
+                            </>
+                        )}
+                        . Solo durante julio o hasta agotar existencias.
                     </p>
                 </div>
             )}
@@ -239,14 +247,14 @@ function HeroBody() {
     );
 }
 
-function BrandPanel() {
+function BrandPanel({ preventaEstado }: { preventaEstado: PreventaEstado | null }) {
     return (
         <aside className="relative hidden border-r border-boss-border bg-boss-black lg:sticky lg:top-0 lg:flex lg:h-screen lg:w-[44%] lg:flex-col lg:justify-center lg:overflow-hidden lg:px-10 lg:py-8 xl:px-14">
             <div className="pointer-events-none absolute -left-32 -top-32 h-96 w-96 rounded-full bg-boss-red/20 blur-3xl" />
             <div className="pointer-events-none absolute -bottom-24 -right-16 h-80 w-80 rounded-full bg-boss-green/10 blur-3xl" />
 
             <div className="relative">
-                <HeroBody />
+                <HeroBody preventaEstado={preventaEstado} />
             </div>
         </aside>
     );

@@ -12,12 +12,11 @@ import {
     PAQUETES_COMPETIDOR,
     PAQUETES_PUBLICO,
     PRECIO_MXN_CENTAVOS_POR_PAQUETE_BASE,
-    PRECIO_MXN_CENTAVOS_POR_PAQUETE_BASE_PREVENTA,
     PRECIO_MXN_CENTAVOS_WORKSHOP_INDIVIDUAL,
     PRECIO_MXN_CENTAVOS_WORKSHOP_BUNDLE_3,
-    PRECIO_MXN_CENTAVOS_WORKSHOP_BUNDLE_3_PREVENTA,
     PRECIO_MXN_CENTAVOS_OPEN_STYLE_ADDON,
     PAQUETES_CON_PREVENTA,
+    PREVENTA_PORCENTAJE_DESCUENTO,
     preventaVigentePorFecha,
     calcularPrecioTotal,
     formatearMXN,
@@ -87,10 +86,11 @@ export function StepCategoria() {
 
     const precioPaquete = (key: PaqueteBase) => {
         if (key === "SOLO_WORKSHOPS") return PRECIO_MXN_CENTAVOS_WORKSHOP_INDIVIDUAL;
+        const base = PRECIO_MXN_CENTAVOS_POR_PAQUETE_BASE[key];
         if (preventaActiva && PAQUETES_CON_PREVENTA.includes(key)) {
-            return PRECIO_MXN_CENTAVOS_POR_PAQUETE_BASE_PREVENTA[key] ?? PRECIO_MXN_CENTAVOS_POR_PAQUETE_BASE[key];
+            return Math.round(base * (1 - PREVENTA_PORCENTAJE_DESCUENTO));
         }
-        return PRECIO_MXN_CENTAVOS_POR_PAQUETE_BASE[key];
+        return base;
     };
 
     return (
@@ -225,21 +225,9 @@ export function StepCategoria() {
                     })}
                     {!esPublico && (
                         <li className="text-sm text-boss-gray">
-                            Workshop individual {formatearMXN(PRECIO_MXN_CENTAVOS_WORKSHOP_INDIVIDUAL)}, o los 3
-                            por{" "}
-                            {preventaActiva ? (
-                                <>
-                                    <span className="line-through">
-                                        {formatearMXN(PRECIO_MXN_CENTAVOS_WORKSHOP_BUNDLE_3)}
-                                    </span>{" "}
-                                    <span className="text-boss-green">
-                                        {formatearMXN(PRECIO_MXN_CENTAVOS_WORKSHOP_BUNDLE_3_PREVENTA)}
-                                    </span>
-                                </>
-                            ) : (
-                                formatearMXN(PRECIO_MXN_CENTAVOS_WORKSHOP_BUNDLE_3)
-                            )}
-                            .
+                            Workshop individual {formatearMXN(PRECIO_MXN_CENTAVOS_WORKSHOP_INDIVIDUAL)}, o los 3 por{" "}
+                            {formatearMXN(PRECIO_MXN_CENTAVOS_WORKSHOP_BUNDLE_3)}.
+                            {preventaActiva && " Con la Preventa Fundadores, el 20% se descuenta sobre el total de tu compra (incluye workshops y extras)."}
                         </li>
                     )}
                     {!esPublico && (

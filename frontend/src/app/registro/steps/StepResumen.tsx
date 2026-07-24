@@ -1,10 +1,11 @@
 import { useFormContext } from "react-hook-form";
 import Image from "next/image";
-import { CATEGORIAS, calcularPrecioTotal, formatearMXN, preventaVigentePorFecha } from "@/config/catalog";
+import { CATEGORIAS, calcularPrecioTotal, formatearMXN, preventaVigentePorFecha, PAQUETES_CON_PREVENTA } from "@/config/catalog";
 import type { RegistrationFormValues } from "@/types/registrationForm";
+import type { PreventaEstado } from "@/lib/api";
 import { Field, inputClass } from "../components/Field";
 
-export function StepResumen() {
+export function StepResumen({ preventaEstado }: { preventaEstado: PreventaEstado | null }) {
     const {
         watch,
         register,
@@ -23,10 +24,15 @@ export function StepResumen() {
     const fotoUrl = watch("fotoUrl");
 
     const esPublico = tipoParticipacion === "PUBLICO";
-    const preventaActiva = preventaVigentePorFecha();
+    // Mientras se confirma con el backend, se usa solo la fecha como aproximación;
+    // el backend siempre recalcula el total real al pagar.
+    const preventaActiva = preventaEstado?.activa ?? preventaVigentePorFecha();
     const precioTotal = paqueteBase
         ? calcularPrecioTotal(paqueteBase, workshopsSeleccionados, { agregarOpenStyle, preventaActiva })
         : 0;
+
+    const paqueteElegiblePreventa = paqueteBase ? PAQUETES_CON_PREVENTA.includes(paqueteBase) : false;
+    const calificaParaPreventa = preventaActiva && paqueteElegiblePreventa;
 
     const filas: { label: string; valor: string }[] = [
         { label: "Nombre", valor: `${nombres ?? ""} ${apellidos ?? ""}`.trim() || "—" },
@@ -48,6 +54,19 @@ export function StepResumen() {
                         unoptimized
                         className="h-50 w-50 rounded-full border-2 border-boss-red object-cover"
                     />
+                </div>
+            )}
+
+            {calificaParaPreventa && (
+                <div className="mb-4 rounded-md border border-boss-green/40 bg-boss-green/10 px-4 py-3 text-left">
+                    <p className="font-display text-sm text-center uppercase tracking-widest text-boss-green">
+                         ¡Estás dentro de los primeros 50 lugares!
+                    </p>
+                    <p className="mt-1 text-xl text-boss-gray">
+                        Se te aplicará automáticamente un 20% de descuento de la Preventa Fundadores
+                        
+                        .
+                    </p>
                 </div>
             )}
 

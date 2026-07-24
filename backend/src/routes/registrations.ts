@@ -19,8 +19,10 @@ import { registrationCreateLimiter, registrationStatusLimiter } from "../lib/rat
 // La preventa Fundadores está vigente si estamos dentro de la ventana de fechas
 // Y aún quedan lugares entre los primeros PREVENTA_CUPO_MAXIMO (contando solo
 // registros con pago confirmado en los paquetes que aplican).
-async function calcularPreventaActiva(): Promise<boolean> {
-    if (!preventaVigentePorFecha()) return false;
+async function calcularPreventaEstado(): Promise<{ activa: boolean; lugaresRestantes: number }> {
+    if (!preventaVigentePorFecha()) {
+        return { activa: false, lugaresRestantes: 0 };
+    }
 
     const inscritosPreventa = await prisma.registration.count({
         where: {
@@ -29,11 +31,23 @@ async function calcularPreventaActiva(): Promise<boolean> {
         },
     });
 
-    return inscritosPreventa < PREVENTA_CUPO_MAXIMO;
+    const lugaresRestantes = Math.max(PREVENTA_CUPO_MAXIMO - inscritosPreventa, 0);
+    return { activa: lugaresRestantes > 0, lugaresRestantes };
+}
+
+async function calcularPreventaActiva(): Promise<boolean> {
+    return (await calcularPreventaEstado()).activa;
 }
 
 
 export const registrationsRouter = Router();
+
+// Estado público de la preventa Fundadores, para que el formulario le avise al
+// usuario en tiempo real si quedan lugares entre los primeros 50 antes de pagar.
+registrationsRouter.get("/preventa-estado", registrationStatusLimiter, async (_req, res) => {
+    const estado = await calcularPreventaEstado();
+    return res.json(estado);
+});
 
 registrationsRouter.get("/by-session/:sessionId", registrationStatusLimiter, async (req, res) => {
     const { sessionId } = req.params;

@@ -48,6 +48,29 @@ export async function postRegistration(
     }
 }
 
+export type PreventaEstado = { activa: boolean; lugaresRestantes: number };
+
+export async function getPreventaEstado(): Promise<PreventaEstado> {
+    if (!API_URL) {
+        console.error("NEXT_PUBLIC_API_URL no está configurada");
+        return { activa: false, lugaresRestantes: 0 };
+    }
+
+    try {
+        const response = await fetch(`${API_URL}/api/registrations/preventa-estado`);
+        const data = (await parseJsonSafely(response)) as Partial<PreventaEstado> | null;
+
+        if (!response.ok || !data) {
+            return { activa: false, lugaresRestantes: 0 };
+        }
+
+        return { activa: Boolean(data.activa), lugaresRestantes: Number(data.lugaresRestantes ?? 0) };
+    } catch (error) {
+        console.error("Error al conectar con /api/registrations/preventa-estado", error);
+        return { activa: false, lugaresRestantes: 0 };
+    }
+}
+
 export type RegistrationBySession = {
     estatusPago?: "PENDIENTE" | "PAGADO" | "FALLIDO" | "REEMBOLSADO";
     nombres?: string;
