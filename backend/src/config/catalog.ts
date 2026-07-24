@@ -211,3 +211,21 @@ export function calcularPrecioTotal(
 
     return total;
 }
+
+// --- Códigos de descuento promocionales ---
+// Sensibles a mayúsculas/minúsculas. El porcentaje se aplica sobre el precio
+// total ya calculado (incluye preventa y extras).
+export const CODIGOS_DESCUENTO: Record<string, number> = {
+    GRUPOIDEK: 0.9, // 90% de descuento
+};
+
+export function codigoDescuentoValido(codigo: string): boolean {
+    return Object.prototype.hasOwnProperty.call(CODIGOS_DESCUENTO, codigo);
+}
+
+export function aplicarCodigoDescuento(precioMXNCentavos: number, codigo?: string | null): number {
+    if (!codigo) return precioMXNCentavos;
+    const descuento = CODIGOS_DESCUENTO[codigo];
+    if (descuento === undefined) return precioMXNCentavos;
+    return Math.round(precioMXNCentavos * (1 - descuento));
+}

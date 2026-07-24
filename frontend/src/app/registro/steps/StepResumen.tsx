@@ -2,9 +2,14 @@ import { useFormContext } from "react-hook-form";
 import Image from "next/image";
 import { CATEGORIAS, calcularPrecioTotal, formatearMXN, preventaVigentePorFecha } from "@/config/catalog";
 import type { RegistrationFormValues } from "@/types/registrationForm";
+import { Field, inputClass } from "../components/Field";
 
 export function StepResumen() {
-    const { watch } = useFormContext<RegistrationFormValues>();
+    const {
+        watch,
+        register,
+        formState: { errors },
+    } = useFormContext<RegistrationFormValues>();
 
     const tipoParticipacion = watch("tipoParticipacion");
     const nombres = watch("nombres");
@@ -59,6 +64,21 @@ export function StepResumen() {
                     </span>
                     <span className="text-left font-display text-xl text-boss-red">{formatearMXN(precioTotal)}</span>
                 </div>
+            </div>
+
+            <div className="mt-5">
+                <Field label="Código de descuento (opcional)" error={errors.codigoDescuento?.message}>
+                    <input
+                        {...register("codigoDescuento")}
+                        className={inputClass}
+                        placeholder="Ingresa tu código"
+                        autoCapitalize="none"
+                        autoCorrect="off"
+                    />
+                </Field>
+                <p className="mt-1 text-xs text-boss-gray">
+                    Si tienes un código válido, el descuento se aplicará automáticamente al monto a pagar.
+                </p>
             </div>
 
             <p className="mt-6 text-center font-display text-xl uppercase leading-snug tracking-wide text-white sm:text-2xl">

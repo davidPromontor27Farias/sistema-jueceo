@@ -52,6 +52,7 @@ export const registrationFormSchema = z
         paqueteBase: z.enum(PAQUETES_BASE_KEYS, { message: "Selecciona un paquete" }),
         workshopsSeleccionados: z.array(z.number().int().min(1).max(3)).max(3).default([]),
         agregarOpenStyle: z.boolean().default(false),
+        codigoDescuento: z.string().trim().max(50).optional().or(z.literal("")),
         aceptaReglamento: z.boolean().optional(),
         aceptaAvisoPrivacidad: z.boolean().optional(),
         aceptaPoliticaCancelacion: z.boolean().optional(),

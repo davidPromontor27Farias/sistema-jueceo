@@ -8,6 +8,8 @@ import {
     PREVENTA_CUPO_MAXIMO,
     CATEGORIAS_LABEL,
     PAQUETES_BASE_LABEL,
+    codigoDescuentoValido,
+    aplicarCodigoDescuento,
 } from "../config/catalog";
 import { prisma } from "../lib/prisma";
 import { stripe } from "../lib/stripe";
@@ -88,14 +90,22 @@ registrationsRouter.post("/", registrationCreateLimiter, async (req, res) => {
     }
 
     const data = parsed.data;
+    const codigoDescuento = data.codigoDescuento?.trim() || undefined;
+    if (codigoDescuento && !codigoDescuentoValido(codigoDescuento)) {
+        return res.status(400).json({ error: "Código de descuento inválido" });
+    }
+
     const tipoBoleto = tipoBoletoPorCategoria(data.categoria);
     // Público en general no captura Bboy/Bgirl name; usamos su nombre completo como respaldo.
     const nombreArtistico = data.nombreArtistico || `${data.nombres} ${data.apellidos}`.trim();
     const preventaActiva = await calcularPreventaActiva();
-    const precioMXNCentavos = calcularPrecioTotal(data.paqueteBase, data.workshopsSeleccionados, {
-        agregarOpenStyle: data.agregarOpenStyle,
-        preventaActiva,
-    });
+    const precioMXNCentavos = aplicarCodigoDescuento(
+        calcularPrecioTotal(data.paqueteBase, data.workshopsSeleccionados, {
+            agregarOpenStyle: data.agregarOpenStyle,
+            preventaActiva,
+        }),
+        codigoDescuento,
+    );
 
     let registrationId: string;
     try{

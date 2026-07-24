@@ -53,6 +53,7 @@ export const registrationSchema = z
         paqueteBase: z.enum(PAQUETES_BASE),
         workshopsSeleccionados: z.array(z.number().int().min(1).max(3)).max(3).default([]),
         agregarOpenStyle: z.boolean().default(false),
+        codigoDescuento: z.string().trim().max(50).optional().or(z.literal("")),
         aceptaReglamento: z.boolean().default(false),
         aceptaAvisoPrivacidad: z.literal(true),
         aceptaPoliticaCancelacion: z.literal(true),

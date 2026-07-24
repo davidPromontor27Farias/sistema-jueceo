@@ -77,6 +77,7 @@ export default function RegistroPage() {
             academiaCrew: formValues.academiaCrew?.trim() ? formValues.academiaCrew.trim() : undefined,
             contactoEmergencia: formValues.contactoEmergencia?.trim() ? formValues.contactoEmergencia.trim() : undefined,
             fotoUrl: formValues.fotoUrl?.trim() ? formValues.fotoUrl.trim() : undefined,
+            codigoDescuento: formValues.codigoDescuento?.trim() ? formValues.codigoDescuento.trim() : undefined,
         };
 
         const resultado = await postRegistration(payload);
