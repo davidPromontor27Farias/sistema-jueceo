@@ -15,7 +15,6 @@ import {
     PRECIO_MXN_CENTAVOS_WORKSHOP_INDIVIDUAL,
     PRECIO_MXN_CENTAVOS_WORKSHOP_BUNDLE_3,
     PRECIO_MXN_CENTAVOS_OPEN_STYLE_ADDON,
-    preventaVigentePorFecha,
     calcularPrecioTotal,
     formatearMXN,
     type Categoria,
@@ -43,7 +42,6 @@ export function StepCategoria() {
     const agregarOpenStyle = watch("agregarOpenStyle") ?? false;
 
     const esPublico = tipoParticipacion === "PUBLICO";
-    const preventaActiva = preventaVigentePorFecha();
 
     const [otraAcademia, setOtraAcademia] = useState(
         () => !!academiaCrew && !(ACADEMIAS_CONOCIDAS as readonly string[]).includes(academiaCrew),
@@ -72,8 +70,11 @@ export function StepCategoria() {
         !esPublico && !!paqueteBase && !PAQUETES_CON_WORKSHOPS_INCLUIDOS.includes(paqueteBase);
     const mostrarPreguntaOpenStyle = !esPublico && !!categoria && categoria !== "OPEN_STYLE_1V1";
 
+    // Sin el 20% de preventa: en esta sección solo se refleja el descuento por
+    // volumen de los 3 workshops ($600 en vez de $750). El 20% de "primeros 50"
+    // se muestra únicamente en el Resumen (paso final), sobre el total.
     const precioTotal = paqueteBase
-        ? calcularPrecioTotal(paqueteBase, workshopsSeleccionados, { agregarOpenStyle, preventaActiva })
+        ? calcularPrecioTotal(paqueteBase, workshopsSeleccionados, { agregarOpenStyle })
         : 0;
 
     const toggleWorkshop = (numero: number) => {
