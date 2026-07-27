@@ -15,7 +15,6 @@ import {
     PRECIO_MXN_CENTAVOS_WORKSHOP_INDIVIDUAL,
     PRECIO_MXN_CENTAVOS_WORKSHOP_BUNDLE_3,
     PRECIO_MXN_CENTAVOS_OPEN_STYLE_ADDON,
-    PREVENTA_PORCENTAJE_DESCUENTO,
     preventaVigentePorFecha,
     calcularPrecioTotal,
     formatearMXN,
@@ -83,13 +82,11 @@ export function StepCategoria() {
         setValue("workshopsSeleccionados", siguiente, { shouldValidate: true });
     };
 
+    // El listado de "Costos" siempre muestra el precio de lista, sin el 20% de
+    // preventa: ese descuento solo se refleja en el total final (abajo) y al pagar.
     const precioPaquete = (key: PaqueteBase) => {
         if (key === "SOLO_WORKSHOPS") return PRECIO_MXN_CENTAVOS_WORKSHOP_INDIVIDUAL;
-        const base = PRECIO_MXN_CENTAVOS_POR_PAQUETE_BASE[key];
-        if (preventaActiva) {
-            return Math.round(base * (1 - PREVENTA_PORCENTAJE_DESCUENTO));
-        }
-        return base;
+        return PRECIO_MXN_CENTAVOS_POR_PAQUETE_BASE[key];
     };
 
     return (
@@ -203,30 +200,19 @@ export function StepCategoria() {
                     Costos
                 </h3>
                 <ul className="space-y-3 text-sm text-foreground">
-                    {paquetesDisponibles.map(([key, label]) => {
-                        const conDescuento = preventaActiva && key !== "SOLO_WORKSHOPS";
-                        return (
-                            <li key={key}>
-                                <div className="flex justify-between gap-3">
-                                    <span>{label}</span>
-                                    <span className="flex items-center gap-2">
-                                        {conDescuento && (
-                                            <span className="text-xs text-boss-gray line-through">
-                                                {formatearMXN(PRECIO_MXN_CENTAVOS_POR_PAQUETE_BASE[key])}
-                                            </span>
-                                        )}
-                                        <span className="text-boss-green">{formatearMXN(precioPaquete(key))}</span>
-                                    </span>
-                                </div>
-                                <p className="mt-1 text-sm text-boss-gray">{PAQUETES_BASE_DESCRIPCION[key]}</p>
-                            </li>
-                        );
-                    })}
+                    {paquetesDisponibles.map(([key, label]) => (
+                        <li key={key}>
+                            <div className="flex justify-between gap-3">
+                                <span>{label}</span>
+                                <span className="text-boss-green">{formatearMXN(precioPaquete(key))}</span>
+                            </div>
+                            <p className="mt-1 text-sm text-boss-gray">{PAQUETES_BASE_DESCRIPCION[key]}</p>
+                        </li>
+                    ))}
                     {!esPublico && (
                         <li className="text-sm text-boss-gray">
                             Workshop individual {formatearMXN(PRECIO_MXN_CENTAVOS_WORKSHOP_INDIVIDUAL)}, o los 3 por{" "}
                             {formatearMXN(PRECIO_MXN_CENTAVOS_WORKSHOP_BUNDLE_3)}.
-                            {preventaActiva && " Con la Preventa Fundadores, el 20% se descuenta sobre el total de tu compra (incluye workshops y extras)."}
                         </li>
                     )}
                     {!esPublico && (
