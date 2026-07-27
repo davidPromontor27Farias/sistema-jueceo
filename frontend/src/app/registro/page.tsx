@@ -230,9 +230,8 @@ function HeroBody({ preventaEstado }: { preventaEstado: PreventaEstado | null })
                         Preventa Fundadores · 20% OFF
                     </p>
                     <p className="mt-1 text-xs text-boss-gray">
-                        El 20% se descuenta sobre el total de tu compra (incluye workshops y extras) al seleccionar
-                        The Boss Entry, The Boss Experience, Entrada General o Workshops. Únicamente a los primeros 50
-                        lugares{" "}
+                        El 20% se descuenta sobre el total de tu compra (cualquier paquete, workshops y extras
+                        incluidos). Únicamente a los primeros 50 lugares{" "}
                         {typeof preventaEstado?.lugaresRestantes === "number" && (
                             <>
                                 (quedan <span className="font-semibold text-boss-green">{preventaEstado.lugaresRestantes}</span>{" "}

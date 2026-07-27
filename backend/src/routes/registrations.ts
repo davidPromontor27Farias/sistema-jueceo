@@ -4,7 +4,6 @@ import {
     calcularPrecioTotal,
     tipoBoletoPorCategoria,
     preventaVigentePorFecha,
-    PAQUETES_CON_PREVENTA,
     PREVENTA_CUPO_MAXIMO,
     CATEGORIAS_LABEL,
     PAQUETES_BASE_LABEL,
@@ -17,18 +16,15 @@ import { generarQrDataUrl } from "../lib/qr";
 import { registrationCreateLimiter, registrationStatusLimiter } from "../lib/rateLimit";
 
 // La preventa Fundadores está vigente si estamos dentro de la ventana de fechas
-// Y aún quedan lugares entre los primeros PREVENTA_CUPO_MAXIMO (contando solo
-// registros con pago confirmado en los paquetes que aplican).
+// Y aún quedan lugares entre los primeros PREVENTA_CUPO_MAXIMO (contando todo
+// registro con pago confirmado, sin importar el paquete).
 async function calcularPreventaEstado(): Promise<{ activa: boolean; lugaresRestantes: number }> {
     if (!preventaVigentePorFecha()) {
         return { activa: false, lugaresRestantes: 0 };
     }
 
     const inscritosPreventa = await prisma.registration.count({
-        where: {
-            paqueteBase: { in: PAQUETES_CON_PREVENTA },
-            estatusPago: "PAGADO",
-        },
+        where: { estatusPago: "PAGADO" },
     });
 
     const lugaresRestantes = Math.max(PREVENTA_CUPO_MAXIMO - inscritosPreventa, 0);

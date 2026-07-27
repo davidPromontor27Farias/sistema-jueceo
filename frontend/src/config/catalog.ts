@@ -188,10 +188,10 @@ export const ACADEMIAS_CONOCIDAS = [
 // Precio en centavos de MXN. Debe coincidir exactamente con backend/src/config/catalog.ts
 // (el backend siempre recalcula el total; esto solo es para mostrarlo en el formulario).
 export const PRECIO_MXN_CENTAVOS_POR_PAQUETE_BASE: Record<PaqueteBase, number> = {
-    COMPETIDOR: 60000,
+    COMPETIDOR: 48000,
     PUBLICO_GENERAL: 25000,
     VIP_EXPERIENCE: 50000,
-    BOSS_EXPERIENCE: 120000,
+    BOSS_EXPERIENCE: 96000,
     BOSS_VIP: 150000,
     SOLO_WORKSHOPS: 0,
 };
@@ -200,20 +200,18 @@ export const PRECIO_MXN_CENTAVOS_WORKSHOP_INDIVIDUAL = 25000;
 export const PRECIO_MXN_CENTAVOS_WORKSHOP_BUNDLE_3 = 60000;
 export const PRECIO_MXN_CENTAVOS_OPEN_STYLE_ADDON = 25000;
 
-// --- Preventa Fundadores: 20% OFF ---
-// Se aplica sobre el total completo de la compra (paquete base + workshops +
-// extras), no solo sobre el paquete base. Únicamente a los primeros 50 lugares
-// (contando también compras de solo workshops), durante julio o hasta agotar
-// existencias (lo que ocurra primero), y solo para los paquetes listados en
-// PAQUETES_CON_PREVENTA. El cupo real solo lo valida el backend (ver
+// --- Preventa Fundadores: 20% OFF adicional ---
+// Descuento adicional del 20% sobre el total completo de la compra (cualquier
+// paquete + workshops + extras), exclusivo para los primeros
+// PREVENTA_CUPO_MAXIMO registros con pago confirmado, durante julio o hasta
+// agotar existencias (lo que ocurra primero). Aplica a todos los paquetes, sin
+// excepción. El cupo real solo lo valida el backend (ver
 // backend/src/routes/registrations.ts); aquí solo se aproxima por fecha para
 // mostrar el precio en el formulario.
 export const PREVENTA_FECHA_INICIO = new Date("2026-07-01T00:00:00-06:00");
 export const PREVENTA_FECHA_FIN = new Date("2026-07-31T23:59:59-06:00");
 export const PREVENTA_CUPO_MAXIMO = 50;
 export const PREVENTA_PORCENTAJE_DESCUENTO = 0.2;
-
-export const PAQUETES_CON_PREVENTA: PaqueteBase[] = ["COMPETIDOR", "BOSS_EXPERIENCE", "PUBLICO_GENERAL", "SOLO_WORKSHOPS"];
 
 export function preventaVigentePorFecha(ahora: Date = new Date()): boolean {
     return ahora >= PREVENTA_FECHA_INICIO && ahora <= PREVENTA_FECHA_FIN;
@@ -254,7 +252,7 @@ export function calcularPrecioTotal(
     }
 
     const preventaActiva = opciones.preventaActiva ?? false;
-    if (preventaActiva && PAQUETES_CON_PREVENTA.includes(paqueteBase)) {
+    if (preventaActiva) {
         total = Math.round(total * (1 - PREVENTA_PORCENTAJE_DESCUENTO));
     }
 

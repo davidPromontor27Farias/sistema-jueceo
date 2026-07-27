@@ -15,7 +15,6 @@ import {
     PRECIO_MXN_CENTAVOS_WORKSHOP_INDIVIDUAL,
     PRECIO_MXN_CENTAVOS_WORKSHOP_BUNDLE_3,
     PRECIO_MXN_CENTAVOS_OPEN_STYLE_ADDON,
-    PAQUETES_CON_PREVENTA,
     PREVENTA_PORCENTAJE_DESCUENTO,
     preventaVigentePorFecha,
     calcularPrecioTotal,
@@ -87,7 +86,7 @@ export function StepCategoria() {
     const precioPaquete = (key: PaqueteBase) => {
         if (key === "SOLO_WORKSHOPS") return PRECIO_MXN_CENTAVOS_WORKSHOP_INDIVIDUAL;
         const base = PRECIO_MXN_CENTAVOS_POR_PAQUETE_BASE[key];
-        if (preventaActiva && PAQUETES_CON_PREVENTA.includes(key)) {
+        if (preventaActiva) {
             return Math.round(base * (1 - PREVENTA_PORCENTAJE_DESCUENTO));
         }
         return base;
@@ -205,7 +204,7 @@ export function StepCategoria() {
                 </h3>
                 <ul className="space-y-3 text-sm text-foreground">
                     {paquetesDisponibles.map(([key, label]) => {
-                        const conDescuento = preventaActiva && PAQUETES_CON_PREVENTA.includes(key);
+                        const conDescuento = preventaActiva && key !== "SOLO_WORKSHOPS";
                         return (
                             <li key={key}>
                                 <div className="flex justify-between gap-3">

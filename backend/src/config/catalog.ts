@@ -122,12 +122,13 @@ export const PREFIJO_ID_COMPETIDOR = "THB";
 export const ACADEMIAS_CONOCIDAS = ["Academia Ejemplo 1", "Academia Ejemplo 2", "Crew Ejemplo"] as const;
 
 // Precio en centavos de MXN (evita errores de punto flotante).
-// Montos tomados del documento de mejoras del cliente (Mejoras_v3).
+// Precios vigentes actuales, sin descuento previo (confirmados con el cliente
+// el 26/07/2026).
 export const PRECIO_MXN_CENTAVOS_POR_PAQUETE_BASE: Record<PaqueteBase, number> = {
-    COMPETIDOR: 60000, // THE BOSS ENTRY: $600.00 MXN
+    COMPETIDOR: 48000, // THE BOSS ENTRY: $480.00 MXN
     PUBLICO_GENERAL: 25000, // Entrada General: $250.00 MXN
     VIP_EXPERIENCE: 50000, // VIP Experience: $500.00 MXN
-    BOSS_EXPERIENCE: 120000, // Competencia + 3 workshops: $1,200.00 MXN
+    BOSS_EXPERIENCE: 96000, // Competencia + 3 workshops: $960.00 MXN
     BOSS_VIP: 150000, // THE BOSS VIP (incluye lo que antes era "Pro Package"): $1,500.00 MXN
     SOLO_WORKSHOPS: 0, // sin precio fijo, se calcula por workshop, ver calcularPrecioTotal
 };
@@ -136,20 +137,18 @@ export const PRECIO_MXN_CENTAVOS_WORKSHOP_INDIVIDUAL = 25000; // $250.00 MXN c/u
 export const PRECIO_MXN_CENTAVOS_WORKSHOP_BUNDLE_3 = 60000; // $600.00 MXN por los 3 (ahorro $150)
 export const PRECIO_MXN_CENTAVOS_OPEN_STYLE_ADDON = 25000; // Agregar Open Style 1 vs 1: $250.00 MXN
 
-// --- Preventa Fundadores: 20% OFF ---
-// Se aplica sobre el total completo de la compra (paquete base + workshops +
-// extras), no solo sobre el paquete base. Únicamente a los primeros 50 lugares
-// (contando también compras de solo workshops), durante julio o hasta agotar
-// existencias (lo que ocurra primero), y solo para los paquetes listados en
-// PAQUETES_CON_PREVENTA. Ver PREVENTA_CUPO_MAXIMO y el conteo en
+// --- Preventa Fundadores: 20% OFF adicional ---
+// Descuento adicional del 20% sobre el total completo de la compra (cualquier
+// paquete + workshops + extras), exclusivo para los primeros
+// PREVENTA_CUPO_MAXIMO registros con pago confirmado, durante julio o hasta
+// agotar existencias (lo que ocurra primero). Aplica a todos los paquetes, sin
+// excepción (confirmado con el cliente el 26/07/2026). Ver el conteo en
 // backend/src/routes/registrations.ts.
 // PENDIENTE: confirmar con el cliente el año/fechas exactas si el evento se recorriera.
 export const PREVENTA_FECHA_INICIO = new Date("2026-07-01T00:00:00-06:00");
 export const PREVENTA_FECHA_FIN = new Date("2026-07-31T23:59:59-06:00");
 export const PREVENTA_CUPO_MAXIMO = 50;
 export const PREVENTA_PORCENTAJE_DESCUENTO = 0.2;
-
-export const PAQUETES_CON_PREVENTA: PaqueteBase[] = ["COMPETIDOR", "BOSS_EXPERIENCE", "PUBLICO_GENERAL", "SOLO_WORKSHOPS"];
 
 export function preventaVigentePorFecha(ahora: Date = new Date()): boolean {
     return ahora >= PREVENTA_FECHA_INICIO && ahora <= PREVENTA_FECHA_FIN;
@@ -195,7 +194,7 @@ export function calcularPrecioTotal(
     }
 
     const preventaActiva = opciones.preventaActiva ?? false;
-    if (preventaActiva && PAQUETES_CON_PREVENTA.includes(paqueteBase)) {
+    if (preventaActiva) {
         total = Math.round(total * (1 - PREVENTA_PORCENTAJE_DESCUENTO));
     }
 
