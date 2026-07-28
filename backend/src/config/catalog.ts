@@ -123,12 +123,12 @@ export const ACADEMIAS_CONOCIDAS = ["Academia Ejemplo 1", "Academia Ejemplo 2", 
 
 // Precio en centavos de MXN (evita errores de punto flotante).
 // Precios vigentes actuales, sin descuento previo (confirmados con el cliente
-// el 26/07/2026).
+// el 28/07/2026: The Boss Entry $600 y The Boss Experience $1,200).
 export const PRECIO_MXN_CENTAVOS_POR_PAQUETE_BASE: Record<PaqueteBase, number> = {
-    COMPETIDOR: 48000, // THE BOSS ENTRY: $480.00 MXN
+    COMPETIDOR: 60000, // THE BOSS ENTRY: $600.00 MXN
     PUBLICO_GENERAL: 25000, // Entrada General: $250.00 MXN
     VIP_EXPERIENCE: 50000, // VIP Experience: $500.00 MXN
-    BOSS_EXPERIENCE: 96000, // Competencia + 3 workshops: $960.00 MXN
+    BOSS_EXPERIENCE: 120000, // Competencia + 3 workshops: $1,200.00 MXN
     BOSS_VIP: 150000, // THE BOSS VIP (incluye lo que antes era "Pro Package"): $1,500.00 MXN
     SOLO_WORKSHOPS: 0, // sin precio fijo, se calcula por workshop, ver calcularPrecioTotal
 };
@@ -152,6 +152,20 @@ export const PREVENTA_PORCENTAJE_DESCUENTO = 0.2;
 
 export function preventaVigentePorFecha(ahora: Date = new Date()): boolean {
     return ahora >= PREVENTA_FECHA_INICIO && ahora <= PREVENTA_FECHA_FIN;
+}
+
+// The Boss VIP y VIP Experience quedan exentos del 20% de preventa (confirmado
+// con el cliente el 28/07/2026): el descuento de "primeros 50" solo aplica a
+// The Boss Entry, The Boss Experience, Workshops y Entrada General.
+const PAQUETES_ELEGIBLES_PREVENTA: PaqueteBase[] = [
+    "COMPETIDOR",
+    "BOSS_EXPERIENCE",
+    "SOLO_WORKSHOPS",
+    "PUBLICO_GENERAL",
+];
+
+export function paqueteElegiblePreventa(paqueteBase: PaqueteBase): boolean {
+    return PAQUETES_ELEGIBLES_PREVENTA.includes(paqueteBase);
 }
 
 // Paquetes que ya incluyen sus workshops en el precio fijo: no se les suma
@@ -193,7 +207,7 @@ export function calcularPrecioTotal(
         total += PRECIO_MXN_CENTAVOS_OPEN_STYLE_ADDON;
     }
 
-    const preventaActiva = opciones.preventaActiva ?? false;
+    const preventaActiva = (opciones.preventaActiva ?? false) && paqueteElegiblePreventa(paqueteBase);
     if (preventaActiva) {
         total = Math.round(total * (1 - PREVENTA_PORCENTAJE_DESCUENTO));
     }

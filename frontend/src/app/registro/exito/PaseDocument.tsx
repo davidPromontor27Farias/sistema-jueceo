@@ -18,25 +18,13 @@ const styles = StyleSheet.create({
         fontFamily: "Helvetica",
     },
     marca: {
-        textAlign: "center",
+        alignItems: "center",
         marginBottom: 18,
     },
-    marcaTitulo: {
-        fontFamily: "Helvetica-Bold",
-        fontSize: 22,
-        letterSpacing: 2,
-    },
-    marcaTitulo2: {
-        fontFamily: "Helvetica-Bold",
-        fontSize: 22,
-        letterSpacing: 2,
-        color: ROJO,
-    },
-    marcaSub: {
-        fontSize: 9,
-        color: GRIS,
-        marginTop: 4,
-        letterSpacing: 1,
+    marcaLogo: {
+        width: 110,
+        height: 110,
+        objectFit: "contain",
     },
     tarjeta: {
         borderWidth: 1,
@@ -192,12 +180,7 @@ export function PaseDocument({ esPublico, nombreArtistico, nombreCompleto, categ
         <Document>
             <Page size="A5" style={styles.page}>
                 <View style={styles.marca}>
-                    <Text style={styles.marcaTitulo}>
-                        THE <Text style={styles.marcaTitulo2}>BOSS</Text>
-                    </Text>
-                    <Text style={styles.marcaSub}>
-                        BREAKING EVENT · {EVENTO_FECHA_LABEL} · {EVENTO_UBICACION}
-                    </Text>
+                    <Image src="/the-boss-logo.png" style={styles.marcaLogo} />
                 </View>
 
                 <View style={styles.tarjeta}>

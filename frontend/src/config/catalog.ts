@@ -188,10 +188,10 @@ export const ACADEMIAS_CONOCIDAS = [
 // Precio en centavos de MXN. Debe coincidir exactamente con backend/src/config/catalog.ts
 // (el backend siempre recalcula el total; esto solo es para mostrarlo en el formulario).
 export const PRECIO_MXN_CENTAVOS_POR_PAQUETE_BASE: Record<PaqueteBase, number> = {
-    COMPETIDOR: 48000,
+    COMPETIDOR: 60000,
     PUBLICO_GENERAL: 25000,
     VIP_EXPERIENCE: 50000,
-    BOSS_EXPERIENCE: 96000,
+    BOSS_EXPERIENCE: 120000,
     BOSS_VIP: 150000,
     SOLO_WORKSHOPS: 0,
 };
@@ -215,6 +215,20 @@ export const PREVENTA_PORCENTAJE_DESCUENTO = 0.2;
 
 export function preventaVigentePorFecha(ahora: Date = new Date()): boolean {
     return ahora >= PREVENTA_FECHA_INICIO && ahora <= PREVENTA_FECHA_FIN;
+}
+
+// The Boss VIP y VIP Experience quedan exentos del 20% de preventa (confirmado
+// con el cliente el 28/07/2026): el descuento de "primeros 50" solo aplica a
+// The Boss Entry, The Boss Experience, Workshops y Entrada General.
+const PAQUETES_ELEGIBLES_PREVENTA: PaqueteBase[] = [
+    "COMPETIDOR",
+    "BOSS_EXPERIENCE",
+    "SOLO_WORKSHOPS",
+    "PUBLICO_GENERAL",
+];
+
+export function paqueteElegiblePreventa(paqueteBase: PaqueteBase): boolean {
+    return PAQUETES_ELEGIBLES_PREVENTA.includes(paqueteBase);
 }
 
 const PAQUETES_CON_WORKSHOPS_INCLUIDOS: PaqueteBase[] = ["BOSS_EXPERIENCE", "BOSS_VIP"];
@@ -251,7 +265,7 @@ export function calcularPrecioTotal(
         total += PRECIO_MXN_CENTAVOS_OPEN_STYLE_ADDON;
     }
 
-    const preventaActiva = opciones.preventaActiva ?? false;
+    const preventaActiva = (opciones.preventaActiva ?? false) && paqueteElegiblePreventa(paqueteBase);
     if (preventaActiva) {
         total = Math.round(total * (1 - PREVENTA_PORCENTAJE_DESCUENTO));
     }

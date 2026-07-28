@@ -1,6 +1,12 @@
 import { useFormContext } from "react-hook-form";
 import Image from "next/image";
-import { CATEGORIAS, calcularPrecioTotal, formatearMXN, preventaVigentePorFecha } from "@/config/catalog";
+import {
+    CATEGORIAS,
+    calcularPrecioTotal,
+    formatearMXN,
+    paqueteElegiblePreventa,
+    preventaVigentePorFecha,
+} from "@/config/catalog";
 import type { RegistrationFormValues } from "@/types/registrationForm";
 import type { PreventaEstado } from "@/lib/api";
 import { Field, inputClass } from "../components/Field";
@@ -31,7 +37,7 @@ export function StepResumen({ preventaEstado }: { preventaEstado: PreventaEstado
         ? calcularPrecioTotal(paqueteBase, workshopsSeleccionados, { agregarOpenStyle, preventaActiva })
         : 0;
 
-    const calificaParaPreventa = preventaActiva && Boolean(paqueteBase);
+    const calificaParaPreventa = preventaActiva && !!paqueteBase && paqueteElegiblePreventa(paqueteBase);
 
     const filas: { label: string; valor: string }[] = [
         { label: "Nombre", valor: `${nombres ?? ""} ${apellidos ?? ""}`.trim() || "—" },
