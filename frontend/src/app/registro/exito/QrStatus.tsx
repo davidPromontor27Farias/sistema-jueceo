@@ -115,7 +115,6 @@ export default function QrStatus() {
                 <PaseDocument
                     esPublico={esPublico}
                     nombreArtistico={estado.nombreArtistico}
-                    nombreCompleto={estado.nombreCompleto}
                     categoriaLabel={estado.categoriaLabel}
                     competidorId={estado.competidorId}
                     qrDataUrl={estado.qrDataUrl}

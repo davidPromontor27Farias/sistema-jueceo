@@ -203,13 +203,13 @@ export const PRECIO_MXN_CENTAVOS_OPEN_STYLE_ADDON = 25000;
 // --- Preventa Fundadores: 20% OFF adicional ---
 // Descuento adicional del 20% sobre el total completo de la compra (cualquier
 // paquete + workshops + extras), exclusivo para los primeros
-// PREVENTA_CUPO_MAXIMO registros con pago confirmado, durante julio o hasta
-// agotar existencias (lo que ocurra primero). Aplica a todos los paquetes, sin
+// PREVENTA_CUPO_MAXIMO registros con pago confirmado, durante julio-agosto o
+// hasta agotar existencias (lo que ocurra primero). Aplica a todos los paquetes, sin
 // excepción. El cupo real solo lo valida el backend (ver
 // backend/src/routes/registrations.ts); aquí solo se aproxima por fecha para
 // mostrar el precio en el formulario.
 export const PREVENTA_FECHA_INICIO = new Date("2026-07-01T00:00:00-06:00");
-export const PREVENTA_FECHA_FIN = new Date("2026-07-31T23:59:59-06:00");
+export const PREVENTA_FECHA_FIN = new Date("2026-08-31T23:59:59-06:00");
 export const PREVENTA_CUPO_MAXIMO = 50;
 export const PREVENTA_PORCENTAJE_DESCUENTO = 0.2;
 

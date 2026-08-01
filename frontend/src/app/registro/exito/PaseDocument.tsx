@@ -14,16 +14,16 @@ const styles = StyleSheet.create({
     page: {
         backgroundColor: NEGRO,
         color: "#f5f5f5",
-        padding: 32,
+        padding: 24,
         fontFamily: "Helvetica",
     },
     marca: {
         alignItems: "center",
-        marginBottom: 18,
+        marginBottom: 12,
     },
     marcaLogo: {
-        width: 110,
-        height: 110,
+        width: 80,
+        height: 80,
         objectFit: "contain",
     },
     tarjeta: {
@@ -31,17 +31,17 @@ const styles = StyleSheet.create({
         borderColor: BORDE,
         borderRadius: 12,
         backgroundColor: PANEL,
-        padding: 20,
+        padding: 16,
     },
     encabezadoTarjeta: {
         fontFamily: "Helvetica-Bold",
         textAlign: "center",
-        fontSize: 13,
+        fontSize: 12,
         letterSpacing: 2,
         borderBottomWidth: 1,
         borderBottomColor: BORDE,
-        paddingBottom: 12,
-        marginBottom: 16,
+        paddingBottom: 8,
+        marginBottom: 10,
     },
     fila: {
         flexDirection: "row",
@@ -55,32 +55,27 @@ const styles = StyleSheet.create({
         alignItems: "center",
     },
     etiqueta: {
-        fontSize: 8,
+        fontSize: 7,
         color: ROJO,
         letterSpacing: 1.5,
-        marginTop: 10,
+        marginTop: 6,
     },
     valor: {
         fontFamily: "Helvetica-Bold",
-        fontSize: 16,
+        fontSize: 14,
         marginTop: 2,
         letterSpacing: 0.5,
     },
-    valorSecundario: {
-        fontSize: 12,
-        color: GRIS,
-        marginTop: 1,
-    },
     valorVerde: {
         fontFamily: "Helvetica-Bold",
-        fontSize: 14,
+        fontSize: 13,
         marginTop: 2,
         color: VERDE,
         letterSpacing: 0.5,
     },
     foto: {
-        width: 70,
-        height: 90,
+        width: 56,
+        height: 72,
         borderRadius: 6,
         objectFit: "cover",
         borderWidth: 1,
@@ -88,19 +83,19 @@ const styles = StyleSheet.create({
     },
     qrCaja: {
         backgroundColor: "#ffffff",
-        padding: 8,
+        padding: 6,
         borderRadius: 8,
     },
     qr: {
-        width: 130,
-        height: 130,
+        width: 105,
+        height: 105,
     },
     qrCaption: {
         fontSize: 7,
         color: GRIS,
         textAlign: "center",
-        marginTop: 8,
-        lineHeight: 1.4,
+        marginTop: 6,
+        lineHeight: 1.3,
     },
     qrCaptionRojo: {
         fontFamily: "Helvetica-Bold",
@@ -113,8 +108,8 @@ const styles = StyleSheet.create({
         borderTopWidth: 1,
         borderTopColor: BORDE,
         borderStyle: "dashed",
-        marginTop: 16,
-        paddingTop: 10,
+        marginTop: 10,
+        paddingTop: 6,
         flexDirection: "row",
         justifyContent: "space-between",
     },
@@ -125,10 +120,10 @@ const styles = StyleSheet.create({
     },
     banner: {
         backgroundColor: ROJO,
-        marginTop: 16,
-        marginHorizontal: -20,
-        marginBottom: -20,
-        paddingVertical: 8,
+        marginTop: 10,
+        marginHorizontal: -16,
+        marginBottom: -16,
+        paddingVertical: 6,
         paddingHorizontal: 10,
         flexDirection: "row",
         alignItems: "center",
@@ -136,27 +131,39 @@ const styles = StyleSheet.create({
     },
     bannerTexto: {
         fontFamily: "Helvetica-Bold",
-        fontSize: 11,
+        fontSize: 10,
         letterSpacing: 2,
         color: "#ffffff",
         marginHorizontal: 16,
     },
     bannerGarra: {
-        width: 26,
-        height: 16,
+        width: 22,
+        height: 14,
     },
     avisoFinal: {
         fontSize: 8,
         color: GRIS,
         textAlign: "center",
-        marginTop: 16,
+        marginTop: 10,
     },
 });
+
+// @react-pdf/types declara transform como string, pero @react-pdf/render en
+// tiempo de ejecución solo acepta un arreglo de operaciones { operation, value }
+// (ver applyTransformations en @react-pdf/render/lib/index.js); un string
+// como "translate(...) rotate(...)" truena con "operations.forEach is not a
+// function". Se castea para evitar el tipo incorrecto del paquete.
+const ROTACION_GARRA = [{ operation: "rotate", value: [-8, 20, 12] }] as unknown as string;
+const VOLTEO_GARRA = [
+    { operation: "translate", value: [40, 0] },
+    { operation: "scale", value: [-1, 1] },
+    { operation: "rotate", value: [-8, 20, 12] },
+] as unknown as string;
 
 function GarraTigre({ style, volteada }: { style: { width: number; height: number }; volteada?: boolean }) {
     return (
         <Svg viewBox="0 0 40 24" style={style}>
-            <G transform={volteada ? "translate(40 0) scale(-1 1) rotate(-8 20 12)" : "rotate(-8 20 12)"}>
+            <G transform={volteada ? VOLTEO_GARRA : ROTACION_GARRA}>
                 <Path d="M0 2 C10 -0.5 30 -0.5 40 2 C30 4.5 10 4.5 0 2 Z" fill="#ffffff" fillOpacity={0.6} />
                 <Path d="M0 12 C10 9 30 9 40 12 C30 15 10 15 0 12 Z" fill="#ffffff" />
                 <Path d="M0 22 C10 19.5 30 19.5 40 22 C30 24.5 10 24.5 0 22 Z" fill="#ffffff" fillOpacity={0.6} />
@@ -168,17 +175,16 @@ function GarraTigre({ style, volteada }: { style: { width: number; height: numbe
 export interface PasePdfDatos {
     esPublico: boolean;
     nombreArtistico: string;
-    nombreCompleto: string;
     categoriaLabel: string;
     competidorId: string | null;
     qrDataUrl: string;
     fotoUrl: string | null;
 }
 
-export function PaseDocument({ esPublico, nombreArtistico, nombreCompleto, categoriaLabel, competidorId, qrDataUrl, fotoUrl }: PasePdfDatos) {
+export function PaseDocument({ esPublico, nombreArtistico, categoriaLabel, competidorId, qrDataUrl, fotoUrl }: PasePdfDatos) {
     return (
         <Document>
-            <Page size="A5" style={styles.page}>
+            <Page size="A5" style={styles.page} wrap={false}>
                 <View style={styles.marca}>
                     <Image src="/the-boss-logo.png" style={styles.marcaLogo} />
                 </View>
@@ -192,14 +198,7 @@ export function PaseDocument({ esPublico, nombreArtistico, nombreCompleto, categ
                         <View style={styles.columnaIzq}>
                             {fotoUrl && <Image src={fotoUrl} style={styles.foto} />}
                             <Text style={styles.etiqueta}>{esPublico ? "PÚBLICO GENERAL" : "COMPETIDOR"}</Text>
-                            {nombreArtistico ? (
-                                <>
-                                    <Text style={styles.valor}>{nombreArtistico}</Text>
-                                    <Text style={styles.valorSecundario}>{nombreCompleto}</Text>
-                                </>
-                            ) : (
-                                <Text style={styles.valor}>{nombreCompleto}</Text>
-                            )}
+                            <Text style={styles.valor}>{nombreArtistico}</Text>
                             <Text style={styles.etiqueta}>CATEGORÍA</Text>
                             <Text style={styles.valor}>{categoriaLabel}</Text>
                             {competidorId && (
