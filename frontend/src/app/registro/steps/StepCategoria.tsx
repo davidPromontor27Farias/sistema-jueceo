@@ -15,8 +15,10 @@ import {
     PRECIO_MXN_CENTAVOS_WORKSHOP_INDIVIDUAL,
     PRECIO_MXN_CENTAVOS_WORKSHOP_BUNDLE_3,
     PRECIO_MXN_CENTAVOS_OPEN_STYLE_ADDON,
+    PREVENTA_PORCENTAJE_DESCUENTO,
     calcularPrecioTotal,
     formatearMXN,
+    paqueteElegiblePreventa,
     type Categoria,
     type PaqueteBase,
 } from "@/config/catalog";
@@ -89,6 +91,12 @@ export function StepCategoria() {
         if (key === "SOLO_WORKSHOPS") return PRECIO_MXN_CENTAVOS_WORKSHOP_INDIVIDUAL;
         return PRECIO_MXN_CENTAVOS_POR_PAQUETE_BASE[key];
     };
+
+    // Solo informativo: cómo quedaría el precio con el 20% de preventa, para
+    // que se vea junto al precio de lista. No se aplica al seleccionar el
+    // paquete, eso solo pasa en el total final si la preventa sigue vigente.
+    const precioConDescuentoPreventa = (key: PaqueteBase) =>
+        Math.round(precioPaquete(key) * (1 - PREVENTA_PORCENTAJE_DESCUENTO));
 
     return (
         <>
@@ -205,7 +213,14 @@ export function StepCategoria() {
                         <li key={key}>
                             <div className="flex justify-between gap-3">
                                 <span>{label}</span>
-                                <span className="text-boss-green">{formatearMXN(precioPaquete(key))}</span>
+                                <span className="text-right">
+                                    <span className="text-boss-green">{formatearMXN(precioPaquete(key))}</span>
+                                    {key !== "SOLO_WORKSHOPS" && paqueteElegiblePreventa(key) && (
+                                        <span className="ml-2 text-xs text-boss-gray">
+                                            (con 20% preventa: {formatearMXN(precioConDescuentoPreventa(key))})
+                                        </span>
+                                    )}
+                                </span>
                             </div>
                             <p className="mt-1 text-sm text-boss-gray">{PAQUETES_BASE_DESCRIPCION[key]}</p>
                         </li>
