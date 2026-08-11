@@ -39,9 +39,41 @@ export type VistaPantalla = "APAGADA" | "BRACKETS" | "RESULTADOS" | "ENFRENTAMIE
 export type PantallaEstado = { id: number; vista: VistaPantalla; categoriaEnfocada: Categoria | null; updatedAt: string };
 
 export type AccessVerifyResult =
-    | { ok: true; nombres: string; apellidos: string; nombreArtistico: string; tipoBoleto: string }
+    | {
+          ok: true;
+          nombres: string;
+          apellidos: string;
+          nombreArtistico: string;
+          tipoBoleto: string;
+          categoriaLabel: string;
+          competidorId: string | null;
+          fotoUrl: string | null;
+      }
     | { ok: false; motivo: "QR_INVALIDO" }
-    | { ok: false; motivo: "YA_USADO"; escaneadoEn?: string; nombreArtistico?: string };
+    | {
+          ok: false;
+          motivo: "YA_USADO";
+          escaneadoEn?: string;
+          nombres?: string;
+          apellidos?: string;
+          nombreArtistico?: string;
+          tipoBoleto?: string;
+          categoriaLabel?: string;
+          competidorId?: string | null;
+          fotoUrl?: string | null;
+      };
+
+export type HistorialAccesoItem = {
+    id: string;
+    nombres: string;
+    apellidos: string;
+    nombreArtistico: string;
+    tipoBoleto: string;
+    categoriaLabel: string;
+    competidorId: string | null;
+    fotoUrl: string | null;
+    qrEscaneadoEn: string;
+};
 
 type ApiResult<T> = { ok: true; data: T } | { ok: false; error: string };
 
@@ -202,4 +234,8 @@ export async function verificarAcceso(
         console.error("Error al conectar con /api/access/verify", error);
         return { ok: false, error: "No se pudo conectar con el servidor." };
     }
+}
+
+export function getHistorialAcceso() {
+    return adminFetch<{ historial: HistorialAccesoItem[] }>("/api/access/historial");
 }
