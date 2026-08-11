@@ -1,19 +1,11 @@
 import { Router } from "express";
 import { prisma } from "../lib/prisma";
 import { accessVerifyLimiter } from "../lib/rateLimit";
-
-if (!process.env.STAFF_API_KEY) {
-    throw new Error("Falta STAFF_API_KEY en las variables de entorno");
-}
-const STAFF_API_KEY = process.env.STAFF_API_KEY;
+import { requireRole } from "../middleware/requireAuth";
 
 export const accessRouter = Router();
 
-accessRouter.post("/verify", accessVerifyLimiter, async (req, res) => {
-    if (req.headers["x-staff-key"] !== STAFF_API_KEY) {
-        return res.status(401).json({ error: "No autorizado" });
-    }
-
+accessRouter.post("/verify", accessVerifyLimiter, requireRole("STAFF_ACCESO", "SUPER_ADMIN"), async (req, res) => {
     const qrToken = typeof req.body?.qrToken === "string" ? req.body.qrToken.trim() : "";
     if (!qrToken) {
         return res.status(400).json({ error: "Falta qrToken" });

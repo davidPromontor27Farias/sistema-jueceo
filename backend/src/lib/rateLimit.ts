@@ -26,3 +26,12 @@ export const accessVerifyLimiter = rateLimit({
     legacyHeaders: false,
     message: { error: "Demasiados intentos, espera un momento" },
 });
+
+// Login de administradores: frena fuerza bruta de contraseña.
+export const adminLoginLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 10,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: "Demasiados intentos, intenta de nuevo más tarde" },
+});

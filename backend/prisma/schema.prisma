@@ -60,6 +60,92 @@ enum PaqueteBase {
   PRUEBA_PAGO
 }
 
+enum RolAdmin {
+  SUPER_ADMIN
+  STAFF_ACCESO
+  STAFF_JUECEO
+}
+
+model AdminUser {
+  id           String   @id @default(uuid())
+  nombre       String
+  correo       String   @unique
+  passwordHash String
+  rol          RolAdmin
+  activo       Boolean  @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("admin_users")
+}
+
+enum EstatusCompetencia {
+  NO_INICIADA
+  EN_CURSO
+  FINALIZADA
+}
+
+// Estado en vivo de la competencia por categoría, controlado desde el panel
+// de administración (Sección 2 "Admin Total"). Una fila por valor de Categoria.
+model EstadoCategoria {
+  categoria Categoria           @id
+  estatus   EstatusCompetencia  @default(NO_INICIADA)
+  updatedAt DateTime            @updatedAt
+
+  @@map("estado_categorias")
+}
+
+enum EstatusEnfrentamiento {
+  PENDIENTE
+  EN_CURSO
+  FINALIZADO
+}
+
+// Modelo genérico mínimo de enfrentamientos/brackets, capturado a mano por el
+// staff de jueceo desde el panel de admin. Se amplía cuando se defina el
+// reglamento real de jueceo (armado de brackets, criterios de calificación).
+model Enfrentamiento {
+  id     String @id @default(uuid())
+  categoria Categoria
+  ronda  String // libre, ej. "Octavos", "Cuartos", "Semifinal", "Final"
+  orden  Int    @default(0)
+
+  competidorAId String?
+  competidorA   Registration? @relation("EnfrentamientoCompetidorA", fields: [competidorAId], references: [id])
+  competidorBId String?
+  competidorB   Registration? @relation("EnfrentamientoCompetidorB", fields: [competidorBId], references: [id])
+  ganadorId     String?
+  ganador       Registration? @relation("EnfrentamientoGanador", fields: [ganadorId], references: [id])
+
+  estatus EstatusEnfrentamiento @default(PENDIENTE)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([categoria])
+  @@map("enfrentamientos")
+}
+
+enum VistaPantalla {
+  APAGADA
+  BRACKETS
+  RESULTADOS
+  ENFRENTAMIENTOS
+  GANADORES
+}
+
+// Fila única (id fijo = 1) con lo que se debe proyectar ahora mismo en las
+// pantallas del evento. La pantalla pública hace poll de este endpoint.
+model PantallaEstado {
+  id                Int            @id @default(1)
+  vista             VistaPantalla  @default(APAGADA)
+  categoriaEnfocada Categoria?
+  updatedAt         DateTime       @updatedAt
+
+  @@map("pantalla_estado")
+}
+
 model Registration {
   id                    String      @id @default(uuid())
 
@@ -106,6 +192,10 @@ model Registration {
 
   createdAt             DateTime    @default(now())
   updatedAt             DateTime    @updatedAt
+
+  enfrentamientosComoA       Enfrentamiento[] @relation("EnfrentamientoCompetidorA")
+  enfrentamientosComoB       Enfrentamiento[] @relation("EnfrentamientoCompetidorB")
+  enfrentamientosGanados     Enfrentamiento[] @relation("EnfrentamientoGanador")
 
   @@index([estatusPago])
   @@index([categoria])

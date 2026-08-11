@@ -14,6 +14,20 @@ import { prisma } from "../lib/prisma";
 import { stripe } from "../lib/stripe";
 import { generarQrDataUrl } from "../lib/qr";
 import { registrationCreateLimiter, registrationStatusLimiter } from "../lib/rateLimit";
+import { origenesFrontendPermitidos } from "../lib/origenes";
+
+// FRONTEND_URL puede traer varios orígenes separados por coma (ver lib/origenes.ts).
+// Para armar success_url/cancel_url se usa el origen real desde el que llegó la
+// petición (así, si alguien se registra desde el celular por la IP de la red
+// local, Stripe lo regresa a esa misma IP y no a localhost). Si el origen de la
+// petición no está en la lista permitida, se usa el primero como respaldo.
+function origenParaRedireccion(origenSolicitud: string | undefined): string {
+    const permitidos = origenesFrontendPermitidos();
+    if (origenSolicitud && permitidos.includes(origenSolicitud)) {
+        return origenSolicitud;
+    }
+    return permitidos[0] ?? "";
+}
 
 // La preventa Fundadores está vigente si estamos dentro de la ventana de fechas
 // Y aún quedan lugares entre los primeros PREVENTA_CUPO_MAXIMO (contando todo
@@ -159,6 +173,7 @@ registrationsRouter.post("/", registrationCreateLimiter, async (req, res) => {
 
     try{
         const nombreProducto = `${PAQUETES_BASE_LABEL[data.paqueteBase]} — ${CATEGORIAS_LABEL[data.categoria]}${data.agregarOpenStyle ? " + Open Style 1 vs 1" : ""}`;
+        const origen = origenParaRedireccion(req.headers.origin);
         const session = await stripe.checkout.sessions.create({
             mode: "payment",
             customer_email: data.correo,
@@ -175,8 +190,8 @@ registrationsRouter.post("/", registrationCreateLimiter, async (req, res) => {
                 }
             ],
             metadata: {registrationId},
-            success_url: `${process.env.FRONTEND_URL}/registro/exito?session_id={CHECKOUT_SESSION_ID}`,
-            cancel_url: `${process.env.FRONTEND_URL}/registro/cancelado`,
+            success_url: `${origen}/registro/exito?session_id={CHECKOUT_SESSION_ID}`,
+            cancel_url: `${origen}/registro/cancelado`,
         });
 
         await prisma.registration.update({
