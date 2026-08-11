@@ -60,41 +60,48 @@ function AccesosSoloLectura() {
 
             {error && <p className="mt-4 text-sm font-medium text-red-400">{error}</p>}
 
-            <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="mt-6 grid gap-4 lg:grid-cols-2">
                 {historial === null && <p className="text-boss-gray">Cargando...</p>}
                 {historial?.length === 0 && <p className="text-boss-gray">Todavía no ha entrado nadie.</p>}
                 {historial?.map((persona) => (
-                    <div key={persona.id} className="flex items-center gap-3 rounded-lg border border-boss-border bg-boss-panel/60 p-3">
+                    <div key={persona.id} className="flex items-center gap-4 rounded-lg border border-boss-border bg-boss-panel/60 p-4">
                         {persona.fotoUrl ? (
                             <Image
                                 src={persona.fotoUrl}
                                 alt={persona.nombreArtistico || persona.nombres}
-                                width={64}
-                                height={64}
+                                width={96}
+                                height={96}
                                 unoptimized
-                                className="h-16 w-16 shrink-0 rounded-full border-2 border-boss-green object-cover"
+                                className="h-24 w-24 shrink-0 rounded-full border-2 border-boss-green object-cover"
                             />
                         ) : (
-                            <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full border-2 border-boss-border bg-boss-black text-[10px] text-boss-gray">
+                            <div className="flex h-24 w-24 shrink-0 items-center justify-center rounded-full border-2 border-boss-border bg-boss-black text-xs text-boss-gray">
                                 Sin foto
                             </div>
                         )}
                         <div className="min-w-0">
-                            <p className="truncate font-display text-base uppercase text-white">
-                                {persona.nombreArtistico || `${persona.nombres} ${persona.apellidos}`}
+                            {persona.nombreArtistico && (
+                                <p className="truncate font-display text-2xl uppercase leading-tight text-white">
+                                    {persona.nombreArtistico}
+                                </p>
+                            )}
+                            <p className="truncate text-lg font-medium text-white">
+                                {persona.nombres} {persona.apellidos}
                             </p>
-                            <p className="truncate text-xs text-boss-gray">
-                                {persona.categoriaLabel} ·{" "}
+                            <p className="mt-1 truncate text-base font-semibold uppercase tracking-wide text-boss-red">
+                                {persona.categoriaLabel}
+                            </p>
+                            {persona.academiaCrew && (
+                                <p className="truncate text-base text-boss-gray">{persona.academiaCrew}</p>
+                            )}
+                            <p className="mt-1 truncate text-sm text-boss-gray">
+                                {persona.paqueteBaseLabel}
+                                {persona.paqueteBaseLabel ? " · " : ""}
                                 {new Date(persona.qrEscaneadoEn).toLocaleTimeString("es-MX", {
                                     hour: "2-digit",
                                     minute: "2-digit",
                                 })}
                             </p>
-                            {(persona.paqueteBaseLabel || persona.academiaCrew) && (
-                                <p className="truncate text-xs text-boss-gray">
-                                    {[persona.paqueteBaseLabel, persona.academiaCrew].filter(Boolean).join(" · ")}
-                                </p>
-                            )}
                         </div>
                     </div>
                 ))}
