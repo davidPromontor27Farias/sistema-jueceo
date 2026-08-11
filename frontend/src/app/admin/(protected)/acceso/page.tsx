@@ -161,6 +161,10 @@ function ModalResultado({ resultado, onCerrar }: { resultado: AccessVerifyResult
     const categoriaLabel = "categoriaLabel" in resultado ? resultado.categoriaLabel : undefined;
     const tipoBoleto = "tipoBoleto" in resultado ? resultado.tipoBoleto : undefined;
     const competidorId = "competidorId" in resultado ? resultado.competidorId : undefined;
+    const paqueteBaseLabel = "paqueteBaseLabel" in resultado ? resultado.paqueteBaseLabel : undefined;
+    const academiaCrew = "academiaCrew" in resultado ? resultado.academiaCrew : undefined;
+    const workshopsSeleccionados = "workshopsSeleccionados" in resultado ? resultado.workshopsSeleccionados : undefined;
+    const agregarOpenStyle = "agregarOpenStyle" in resultado ? resultado.agregarOpenStyle : undefined;
 
     const encabezado = esOk ? "Acceso concedido" : esYaUsado ? "QR ya usado" : "QR inválido";
     const colorEncabezado = esOk
@@ -214,6 +218,32 @@ function ModalResultado({ resultado, onCerrar }: { resultado: AccessVerifyResult
                         )}
                     </div>
 
+                    {(paqueteBaseLabel || academiaCrew || agregarOpenStyle || (workshopsSeleccionados && workshopsSeleccionados.length > 0)) && (
+                        <div className="w-full space-y-1.5 rounded-md border border-boss-border bg-boss-black/40 p-3 text-left text-sm">
+                            {paqueteBaseLabel && (
+                                <p>
+                                    <span className="text-boss-gray">Paquete: </span>
+                                    <span className="text-white">{paqueteBaseLabel}</span>
+                                </p>
+                            )}
+                            {academiaCrew && (
+                                <p>
+                                    <span className="text-boss-gray">Academia/Crew: </span>
+                                    <span className="text-white">{academiaCrew}</span>
+                                </p>
+                            )}
+                            {workshopsSeleccionados && workshopsSeleccionados.length > 0 && (
+                                <p>
+                                    <span className="text-boss-gray">Workshops: </span>
+                                    <span className="text-white">{workshopsSeleccionados.join(", ")}</span>
+                                </p>
+                            )}
+                            {agregarOpenStyle && (
+                                <p className="text-boss-green">+ Open Style 1 vs 1</p>
+                            )}
+                        </div>
+                    )}
+
                     {!esOk && !esYaUsado && (
                         <p className="text-sm text-boss-gray">Este código no corresponde a un boleto pagado.</p>
                     )}
@@ -261,6 +291,11 @@ function HistorialPanel({ historial }: { historial: HistorialAccesoItem[] | null
                                 {item.categoriaLabel} ·{" "}
                                 {new Date(item.qrEscaneadoEn).toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" })}
                             </p>
+                            {(item.paqueteBaseLabel || item.academiaCrew) && (
+                                <p className="truncate text-xs text-boss-gray">
+                                    {[item.paqueteBaseLabel, item.academiaCrew].filter(Boolean).join(" · ")}
+                                </p>
+                            )}
                         </div>
                     </div>
                 ))}

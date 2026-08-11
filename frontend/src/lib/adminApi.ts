@@ -38,8 +38,18 @@ export type Enfrentamiento = {
 export type VistaPantalla = "APAGADA" | "BRACKETS" | "RESULTADOS" | "ENFRENTAMIENTOS" | "GANADORES" | "ACCESOS";
 export type PantallaEstado = { id: number; vista: VistaPantalla; categoriaEnfocada: Categoria | null; updatedAt: string };
 
+// paqueteBaseLabel/academiaCrew/workshopsSeleccionados/agregarOpenStyle solo
+// vienen en las respuestas para staff (verify, historial); la vista pública
+// de /pantalla (recientes) no las manda.
+type DetallePaqueteStaff = {
+    paqueteBaseLabel?: string;
+    academiaCrew?: string | null;
+    workshopsSeleccionados?: number[];
+    agregarOpenStyle?: boolean;
+};
+
 export type AccessVerifyResult =
-    | {
+    | ({
           ok: true;
           nombres: string;
           apellidos: string;
@@ -48,9 +58,9 @@ export type AccessVerifyResult =
           categoriaLabel: string;
           competidorId: string | null;
           fotoUrl: string | null;
-      }
+      } & DetallePaqueteStaff)
     | { ok: false; motivo: "QR_INVALIDO" }
-    | {
+    | ({
           ok: false;
           motivo: "YA_USADO";
           escaneadoEn?: string;
@@ -61,7 +71,7 @@ export type AccessVerifyResult =
           categoriaLabel?: string;
           competidorId?: string | null;
           fotoUrl?: string | null;
-      };
+      } & DetallePaqueteStaff);
 
 export type HistorialAccesoItem = {
     id: string;
@@ -73,7 +83,7 @@ export type HistorialAccesoItem = {
     competidorId: string | null;
     fotoUrl: string | null;
     qrEscaneadoEn: string;
-};
+} & DetallePaqueteStaff;
 
 type ApiResult<T> = { ok: true; data: T } | { ok: false; error: string };
 

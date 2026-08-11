@@ -2,12 +2,12 @@ import { Router } from "express";
 import { prisma } from "../lib/prisma";
 import { accessVerifyLimiter, registrationStatusLimiter } from "../lib/rateLimit";
 import { requireRole } from "../middleware/requireAuth";
-import { CATEGORIAS_LABEL } from "../config/catalog";
+import { CATEGORIAS_LABEL, PAQUETES_BASE_LABEL } from "../config/catalog";
 import type { Registration } from "../generated/prisma/client";
 
 export const accessRouter = Router();
 
-const REGISTRO_SELECT = {
+const CAMPOS_PUBLICOS = {
     id: true,
     nombres: true,
     apellidos: true,
@@ -20,9 +20,21 @@ const REGISTRO_SELECT = {
     qrEscaneadoEn: true,
 };
 
-type RegistroSeleccionado = Pick<Registration, keyof typeof REGISTRO_SELECT>;
+// Solo para vistas de staff (el check-in y su historial en /admin/acceso):
+// paquete contratado, academia/crew y extras. No se expone en la vista
+// pública de la pantalla del evento (/api/access/recientes).
+const CAMPOS_STAFF = {
+    ...CAMPOS_PUBLICOS,
+    paqueteBase: true,
+    academiaCrew: true,
+    workshopsSeleccionados: true,
+    agregarOpenStyle: true,
+};
 
-function aItemDeAcceso(registro: RegistroSeleccionado) {
+type RegistroPublico = Pick<Registration, keyof typeof CAMPOS_PUBLICOS>;
+type RegistroStaff = Pick<Registration, keyof typeof CAMPOS_STAFF>;
+
+function aItemPublico(registro: RegistroPublico) {
     return {
         id: registro.id,
         nombres: registro.nombres,
@@ -36,6 +48,19 @@ function aItemDeAcceso(registro: RegistroSeleccionado) {
     };
 }
 
+function aItemStaff(registro: RegistroStaff) {
+    return {
+        ...aItemPublico(registro),
+        // El enum de Prisma conserva PRUEBA_PAGO (deprecado, ver schema.prisma)
+        // por registros de prueba viejos; no tiene label en el catálogo actual.
+        paqueteBaseLabel:
+            (PAQUETES_BASE_LABEL as Record<string, string>)[registro.paqueteBase] ?? registro.paqueteBase,
+        academiaCrew: registro.academiaCrew,
+        workshopsSeleccionados: registro.workshopsSeleccionados,
+        agregarOpenStyle: registro.agregarOpenStyle,
+    };
+}
+
 accessRouter.post("/verify", accessVerifyLimiter, requireRole("STAFF_ACCESO", "SUPER_ADMIN"), async (req, res) => {
     const qrToken = typeof req.body?.qrToken === "string" ? req.body.qrToken.trim() : "";
     if (!qrToken) {
@@ -44,7 +69,7 @@ accessRouter.post("/verify", accessVerifyLimiter, requireRole("STAFF_ACCESO", "S
 
     const registration = await prisma.registration.findUnique({
         where: { qrToken },
-        select: REGISTRO_SELECT,
+        select: CAMPOS_STAFF,
     });
 
     if (!registration || registration.estatusPago !== "PAGADO") {
@@ -56,13 +81,7 @@ accessRouter.post("/verify", accessVerifyLimiter, requireRole("STAFF_ACCESO", "S
             ok: false,
             motivo: "YA_USADO",
             escaneadoEn: registration.qrEscaneadoEn,
-            nombres: registration.nombres,
-            apellidos: registration.apellidos,
-            nombreArtistico: registration.nombreArtistico,
-            tipoBoleto: registration.tipoBoleto,
-            categoriaLabel: CATEGORIAS_LABEL[registration.categoria],
-            competidorId: registration.competidorId,
-            fotoUrl: registration.fotoUrl,
+            ...aItemStaff(registration),
         });
     }
 
@@ -75,42 +94,35 @@ accessRouter.post("/verify", accessVerifyLimiter, requireRole("STAFF_ACCESO", "S
         return res.status(409).json({ ok: false, motivo: "YA_USADO" });
     }
 
-    return res.json({
-        ok: true,
-        nombres: registration.nombres,
-        apellidos: registration.apellidos,
-        nombreArtistico: registration.nombreArtistico,
-        tipoBoleto: registration.tipoBoleto,
-        categoriaLabel: CATEGORIAS_LABEL[registration.categoria],
-        competidorId: registration.competidorId,
-        fotoUrl: registration.fotoUrl,
-    });
+    return res.json({ ok: true, ...aItemStaff(registration) });
 });
 
 // Historial de check-ins: reutiliza qrEscaneadoEn (ya es el timestamp de uso
 // del QR, de un solo uso) en vez de una tabla aparte. Compartido entre todos
-// los dispositivos/staff que estén escaneando en la entrada.
+// los dispositivos/staff que estén escaneando en la entrada. Solo staff: trae
+// el detalle completo del paquete/academia para que el admin vea quién va
+// entrando sin tener que escanear él mismo.
 accessRouter.get("/historial", requireRole("STAFF_ACCESO", "SUPER_ADMIN"), async (_req, res) => {
     const registros = await prisma.registration.findMany({
         where: { qrEscaneadoEn: { not: null } },
-        select: REGISTRO_SELECT,
+        select: CAMPOS_STAFF,
         orderBy: { qrEscaneadoEn: "desc" },
         take: 50,
     });
 
-    return res.json({ historial: registros.map(aItemDeAcceso) });
+    return res.json({ historial: registros.map(aItemStaff) });
 });
 
 // Público: para la vista "Accesos" de /pantalla (ver pantalla.ts), que se
-// proyecta en las pantallas del evento sin login. Mismo dato que /historial
-// pero sin auth, con su propio límite/rate-limit por ser de consumo público.
+// proyecta en las pantallas del evento sin login. Solo lo mínimo (nombre,
+// foto, categoría) — el paquete/academia no se expone públicamente.
 accessRouter.get("/recientes", registrationStatusLimiter, async (_req, res) => {
     const registros = await prisma.registration.findMany({
         where: { qrEscaneadoEn: { not: null } },
-        select: REGISTRO_SELECT,
+        select: CAMPOS_PUBLICOS,
         orderBy: { qrEscaneadoEn: "desc" },
         take: 24,
     });
 
-    return res.json({ recientes: registros.map(aItemDeAcceso) });
+    return res.json({ recientes: registros.map(aItemPublico) });
 });
