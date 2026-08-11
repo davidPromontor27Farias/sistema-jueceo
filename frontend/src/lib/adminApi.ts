@@ -1,6 +1,7 @@
 import type { Categoria } from "@/config/catalog";
+import { resolveApiUrl } from "./apiUrl";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL;
+const API_URL = resolveApiUrl();
 
 export type RolAdmin = "SUPER_ADMIN" | "STAFF_ACCESO" | "STAFF_JUECEO";
 export type AdminInfo = {

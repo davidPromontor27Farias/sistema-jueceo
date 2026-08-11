@@ -1,6 +1,7 @@
 import type { RegistrationFormValues } from "@/types/registrationForm";
+import { resolveApiUrl } from "./apiUrl";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL;
+const API_URL = resolveApiUrl();
 
 export type RegistrationPayload = Omit<RegistrationFormValues, "fechaNacimiento"> & {
     fechaNacimiento: string;
