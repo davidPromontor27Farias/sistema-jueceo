@@ -3,7 +3,14 @@
 import { useEffect, useState } from "react";
 import Image from "next/image";
 import { CATEGORIAS } from "@/config/catalog";
-import { getEnfrentamientos, getPantallaEstado, type Enfrentamiento, type PantallaEstado } from "@/lib/adminApi";
+import {
+    getEnfrentamientos,
+    getPantallaEstado,
+    getRecientesAcceso,
+    type Enfrentamiento,
+    type HistorialAccesoItem,
+    type PantallaEstado,
+} from "@/lib/adminApi";
 
 const INTERVALO_MS = 3000;
 
@@ -15,6 +22,7 @@ function nombreCompetidor(c: Enfrentamiento["competidorA"]): string {
 export default function PantallaPublicaPage() {
     const [estado, setEstado] = useState<PantallaEstado | null>(null);
     const [enfrentamientos, setEnfrentamientos] = useState<Enfrentamiento[]>([]);
+    const [accesos, setAccesos] = useState<HistorialAccesoItem[]>([]);
 
     useEffect(() => {
         let cancelado = false;
@@ -49,6 +57,25 @@ export default function PantallaPublicaPage() {
         };
     }, [estado?.categoriaEnfocada, estado?.vista]);
 
+    useEffect(() => {
+        if (estado?.vista !== "ACCESOS") {
+            return;
+        }
+
+        let cancelado = false;
+        const poll = () => {
+            getRecientesAcceso().then((resultado) => {
+                if (!cancelado && resultado.ok) setAccesos(resultado.data.recientes);
+            });
+        };
+        poll();
+        const id = setInterval(poll, INTERVALO_MS);
+        return () => {
+            cancelado = true;
+            clearInterval(id);
+        };
+    }, [estado?.vista]);
+
     if (!estado || estado.vista === "APAGADA") {
         return (
             <main className="flex min-h-screen items-center justify-center bg-boss-black">
@@ -57,7 +84,8 @@ export default function PantallaPublicaPage() {
         );
     }
 
-    const tituloCategoria = estado.categoriaEnfocada ? CATEGORIAS[estado.categoriaEnfocada] : null;
+    const tituloCategoria =
+        estado.vista !== "ACCESOS" && estado.categoriaEnfocada ? CATEGORIAS[estado.categoriaEnfocada] : null;
 
     return (
         <main className="min-h-screen bg-boss-black px-8 py-10 text-center">
@@ -71,6 +99,7 @@ export default function PantallaPublicaPage() {
                 {estado.vista === "ENFRENTAMIENTOS" && <VistaEnfrentamientosEnCurso enfrentamientos={enfrentamientos} />}
                 {estado.vista === "RESULTADOS" && <VistaResultados enfrentamientos={enfrentamientos} />}
                 {estado.vista === "GANADORES" && <VistaGanadores enfrentamientos={enfrentamientos} />}
+                {estado.vista === "ACCESOS" && <VistaAccesos accesos={accesos} />}
             </div>
         </main>
     );
@@ -145,6 +174,39 @@ function VistaResultados({ enfrentamientos }: { enfrentamientos: Enfrentamiento[
         <div className="mx-auto grid max-w-2xl gap-5">
             {finalizados.map((e) => (
                 <TarjetaEnfrentamiento key={e.id} enfrentamiento={e} />
+            ))}
+        </div>
+    );
+}
+
+function VistaAccesos({ accesos }: { accesos: HistorialAccesoItem[] }) {
+    if (accesos.length === 0) {
+        return <p className="text-boss-gray">Todavía no ha entrado nadie.</p>;
+    }
+
+    return (
+        <div className="mx-auto grid max-w-5xl grid-cols-2 gap-5 sm:grid-cols-3 md:grid-cols-4">
+            {accesos.map((persona) => (
+                <div key={persona.id} className="flex flex-col items-center gap-2">
+                    {persona.fotoUrl ? (
+                        <Image
+                            src={persona.fotoUrl}
+                            alt={persona.nombreArtistico || persona.nombres}
+                            width={140}
+                            height={140}
+                            unoptimized
+                            className="h-28 w-28 rounded-full border-2 border-boss-green object-cover sm:h-36 sm:w-36"
+                        />
+                    ) : (
+                        <div className="flex h-28 w-28 items-center justify-center rounded-full border-2 border-boss-border bg-boss-panel text-xs text-boss-gray sm:h-36 sm:w-36">
+                            Sin foto
+                        </div>
+                    )}
+                    <p className="text-center font-display text-base uppercase text-white sm:text-lg">
+                        {persona.nombreArtistico || `${persona.nombres} ${persona.apellidos}`}
+                    </p>
+                    <p className="text-center text-xs uppercase tracking-wide text-boss-gray">{persona.categoriaLabel}</p>
+                </div>
             ))}
         </div>
     );

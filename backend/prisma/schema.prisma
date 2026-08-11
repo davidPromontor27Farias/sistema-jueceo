@@ -133,6 +133,7 @@ enum VistaPantalla {
   RESULTADOS
   ENFRENTAMIENTOS
   GANADORES
+  ACCESOS
 }
 
 // Fila única (id fijo = 1) con lo que se debe proyectar ahora mismo en las

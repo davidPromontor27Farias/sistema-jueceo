@@ -1,8 +1,9 @@
 import { Router } from "express";
 import { prisma } from "../lib/prisma";
-import { accessVerifyLimiter } from "../lib/rateLimit";
+import { accessVerifyLimiter, registrationStatusLimiter } from "../lib/rateLimit";
 import { requireRole } from "../middleware/requireAuth";
 import { CATEGORIAS_LABEL } from "../config/catalog";
+import type { Registration } from "../generated/prisma/client";
 
 export const accessRouter = Router();
 
@@ -18,6 +19,22 @@ const REGISTRO_SELECT = {
     estatusPago: true,
     qrEscaneadoEn: true,
 };
+
+type RegistroSeleccionado = Pick<Registration, keyof typeof REGISTRO_SELECT>;
+
+function aItemDeAcceso(registro: RegistroSeleccionado) {
+    return {
+        id: registro.id,
+        nombres: registro.nombres,
+        apellidos: registro.apellidos,
+        nombreArtistico: registro.nombreArtistico,
+        tipoBoleto: registro.tipoBoleto,
+        categoriaLabel: CATEGORIAS_LABEL[registro.categoria],
+        competidorId: registro.competidorId,
+        fotoUrl: registro.fotoUrl,
+        qrEscaneadoEn: registro.qrEscaneadoEn,
+    };
+}
 
 accessRouter.post("/verify", accessVerifyLimiter, requireRole("STAFF_ACCESO", "SUPER_ADMIN"), async (req, res) => {
     const qrToken = typeof req.body?.qrToken === "string" ? req.body.qrToken.trim() : "";
@@ -81,17 +98,19 @@ accessRouter.get("/historial", requireRole("STAFF_ACCESO", "SUPER_ADMIN"), async
         take: 50,
     });
 
-    const historial = registros.map((registro) => ({
-        id: registro.id,
-        nombres: registro.nombres,
-        apellidos: registro.apellidos,
-        nombreArtistico: registro.nombreArtistico,
-        tipoBoleto: registro.tipoBoleto,
-        categoriaLabel: CATEGORIAS_LABEL[registro.categoria],
-        competidorId: registro.competidorId,
-        fotoUrl: registro.fotoUrl,
-        qrEscaneadoEn: registro.qrEscaneadoEn,
-    }));
+    return res.json({ historial: registros.map(aItemDeAcceso) });
+});
 
-    return res.json({ historial });
+// Público: para la vista "Accesos" de /pantalla (ver pantalla.ts), que se
+// proyecta en las pantallas del evento sin login. Mismo dato que /historial
+// pero sin auth, con su propio límite/rate-limit por ser de consumo público.
+accessRouter.get("/recientes", registrationStatusLimiter, async (_req, res) => {
+    const registros = await prisma.registration.findMany({
+        where: { qrEscaneadoEn: { not: null } },
+        select: REGISTRO_SELECT,
+        orderBy: { qrEscaneadoEn: "desc" },
+        take: 24,
+    });
+
+    return res.json({ recientes: registros.map(aItemDeAcceso) });
 });

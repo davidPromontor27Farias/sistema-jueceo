@@ -35,7 +35,7 @@ export type Enfrentamiento = {
     estatus: EstatusEnfrentamiento;
 };
 
-export type VistaPantalla = "APAGADA" | "BRACKETS" | "RESULTADOS" | "ENFRENTAMIENTOS" | "GANADORES";
+export type VistaPantalla = "APAGADA" | "BRACKETS" | "RESULTADOS" | "ENFRENTAMIENTOS" | "GANADORES" | "ACCESOS";
 export type PantallaEstado = { id: number; vista: VistaPantalla; categoriaEnfocada: Categoria | null; updatedAt: string };
 
 export type AccessVerifyResult =
@@ -238,4 +238,9 @@ export async function verificarAcceso(
 
 export function getHistorialAcceso() {
     return adminFetch<{ historial: HistorialAccesoItem[] }>("/api/access/historial");
+}
+
+// Público (sin sesión) — lo consume /pantalla para la vista "Accesos".
+export function getRecientesAcceso() {
+    return adminFetch<{ recientes: HistorialAccesoItem[] }>("/api/access/recientes");
 }

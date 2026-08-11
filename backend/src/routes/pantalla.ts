@@ -6,7 +6,7 @@ import { sinIndefinidos } from "../lib/utils";
 import { CATEGORIAS_LABEL, type Categoria } from "../config/catalog";
 
 const CATEGORIAS_ENUM = Object.keys(CATEGORIAS_LABEL) as [Categoria, ...Categoria[]];
-const VISTAS = ["APAGADA", "BRACKETS", "RESULTADOS", "ENFRENTAMIENTOS", "GANADORES"] as const;
+const VISTAS = ["APAGADA", "BRACKETS", "RESULTADOS", "ENFRENTAMIENTOS", "GANADORES", "ACCESOS"] as const;
 
 const patchPantallaSchema = z.object({
     vista: z.enum(VISTAS),
