@@ -35,7 +35,7 @@ export type Enfrentamiento = {
     estatus: EstatusEnfrentamiento;
 };
 
-export type VistaPantalla = "APAGADA" | "BRACKETS" | "RESULTADOS" | "ENFRENTAMIENTOS" | "GANADORES" | "ACCESOS";
+export type VistaPantalla = "APAGADA" | "BRACKETS" | "RESULTADOS" | "ENFRENTAMIENTOS" | "GANADORES";
 export type PantallaEstado = { id: number; vista: VistaPantalla; categoriaEnfocada: Categoria | null; updatedAt: string };
 
 // paqueteBaseLabel/academiaCrew/workshopsSeleccionados/agregarOpenStyle solo
@@ -248,9 +248,4 @@ export async function verificarAcceso(
 
 export function getHistorialAcceso() {
     return adminFetch<{ historial: HistorialAccesoItem[] }>("/api/access/historial");
-}
-
-// Público (sin sesión) — lo consume /pantalla para la vista "Accesos".
-export function getRecientesAcceso() {
-    return adminFetch<{ recientes: HistorialAccesoItem[] }>("/api/access/recientes");
 }

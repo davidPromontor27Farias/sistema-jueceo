@@ -4,6 +4,7 @@ import Image from "next/image";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { RequireRol } from "../layout";
 import { inputClass } from "../../../registro/components/Field";
+import { useAdminSession } from "../../AdminSessionContext";
 import { getHistorialAcceso, verificarAcceso, type AccessVerifyResult, type HistorialAccesoItem } from "@/lib/adminApi";
 
 const PAUSA_ENTRE_ESCANEOS_MS = 4000;
@@ -11,12 +12,98 @@ const PAUSA_ENTRE_ESCANEOS_MS = 4000;
 export default function AdminAccesoPage() {
     return (
         <RequireRol roles={["SUPER_ADMIN", "STAFF_ACCESO"]}>
-            <AccesoContenido />
+            <AccesoRouter />
         </RequireRol>
     );
 }
 
-function AccesoContenido() {
+// El SUPER_ADMIN administra la plataforma pero no escanea en la entrada — solo
+// ve, de solo lectura, quién va accediendo. Escanear (cámara + entrada manual)
+// es exclusivo del staff que él mismo designe con el rol STAFF_ACCESO.
+function AccesoRouter() {
+    const { admin } = useAdminSession();
+    if (admin?.rol === "SUPER_ADMIN") {
+        return <AccesosSoloLectura />;
+    }
+    return <EscanerContenido />;
+}
+
+function AccesosSoloLectura() {
+    const [historial, setHistorial] = useState<HistorialAccesoItem[] | null>(null);
+    const [error, setError] = useState<string | null>(null);
+
+    useEffect(() => {
+        let cancelado = false;
+        const poll = () => {
+            getHistorialAcceso().then((resp) => {
+                if (cancelado) return;
+                if (resp.ok) {
+                    setHistorial(resp.data.historial);
+                    setError(null);
+                } else {
+                    setError(resp.error);
+                }
+            });
+        };
+        poll();
+        const id = setInterval(poll, 5000);
+        return () => {
+            cancelado = true;
+            clearInterval(id);
+        };
+    }, []);
+
+    return (
+        <div>
+            <h1 className="font-display text-2xl uppercase tracking-wide text-white">Accesos</h1>
+            <p className="mt-1 text-boss-gray">Personas que ya ingresaron al evento, en tiempo real.</p>
+
+            {error && <p className="mt-4 text-sm font-medium text-red-400">{error}</p>}
+
+            <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {historial === null && <p className="text-boss-gray">Cargando...</p>}
+                {historial?.length === 0 && <p className="text-boss-gray">Todavía no ha entrado nadie.</p>}
+                {historial?.map((persona) => (
+                    <div key={persona.id} className="flex items-center gap-3 rounded-lg border border-boss-border bg-boss-panel/60 p-3">
+                        {persona.fotoUrl ? (
+                            <Image
+                                src={persona.fotoUrl}
+                                alt={persona.nombreArtistico || persona.nombres}
+                                width={64}
+                                height={64}
+                                unoptimized
+                                className="h-16 w-16 shrink-0 rounded-full border-2 border-boss-green object-cover"
+                            />
+                        ) : (
+                            <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full border-2 border-boss-border bg-boss-black text-[10px] text-boss-gray">
+                                Sin foto
+                            </div>
+                        )}
+                        <div className="min-w-0">
+                            <p className="truncate font-display text-base uppercase text-white">
+                                {persona.nombreArtistico || `${persona.nombres} ${persona.apellidos}`}
+                            </p>
+                            <p className="truncate text-xs text-boss-gray">
+                                {persona.categoriaLabel} ·{" "}
+                                {new Date(persona.qrEscaneadoEn).toLocaleTimeString("es-MX", {
+                                    hour: "2-digit",
+                                    minute: "2-digit",
+                                })}
+                            </p>
+                            {(persona.paqueteBaseLabel || persona.academiaCrew) && (
+                                <p className="truncate text-xs text-boss-gray">
+                                    {[persona.paqueteBaseLabel, persona.academiaCrew].filter(Boolean).join(" · ")}
+                                </p>
+                            )}
+                        </div>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+}
+
+function EscanerContenido() {
     const videoRef = useRef<HTMLVideoElement>(null);
     const bloqueadoRef = useRef(false);
     const [resultado, setResultado] = useState<AccessVerifyResult | null>(null);

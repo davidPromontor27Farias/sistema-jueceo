@@ -1,13 +1,17 @@
 import { Router } from "express";
 import { prisma } from "../lib/prisma";
-import { accessVerifyLimiter, registrationStatusLimiter } from "../lib/rateLimit";
+import { accessVerifyLimiter } from "../lib/rateLimit";
 import { requireRole } from "../middleware/requireAuth";
 import { CATEGORIAS_LABEL, PAQUETES_BASE_LABEL } from "../config/catalog";
 import type { Registration } from "../generated/prisma/client";
 
 export const accessRouter = Router();
 
-const CAMPOS_PUBLICOS = {
+// Datos de staff (check-in y su historial en /admin/acceso): paquete
+// contratado, academia/crew y extras. Todo este router requiere sesión de
+// STAFF_ACCESO o SUPER_ADMIN — quién entra al evento no se expone en ningún
+// endpoint público.
+const CAMPOS_STAFF = {
     id: true,
     nombres: true,
     apellidos: true,
@@ -18,23 +22,15 @@ const CAMPOS_PUBLICOS = {
     fotoUrl: true,
     estatusPago: true,
     qrEscaneadoEn: true,
-};
-
-// Solo para vistas de staff (el check-in y su historial en /admin/acceso):
-// paquete contratado, academia/crew y extras. No se expone en la vista
-// pública de la pantalla del evento (/api/access/recientes).
-const CAMPOS_STAFF = {
-    ...CAMPOS_PUBLICOS,
     paqueteBase: true,
     academiaCrew: true,
     workshopsSeleccionados: true,
     agregarOpenStyle: true,
 };
 
-type RegistroPublico = Pick<Registration, keyof typeof CAMPOS_PUBLICOS>;
 type RegistroStaff = Pick<Registration, keyof typeof CAMPOS_STAFF>;
 
-function aItemPublico(registro: RegistroPublico) {
+function aItemStaff(registro: RegistroStaff) {
     return {
         id: registro.id,
         nombres: registro.nombres,
@@ -45,12 +41,6 @@ function aItemPublico(registro: RegistroPublico) {
         competidorId: registro.competidorId,
         fotoUrl: registro.fotoUrl,
         qrEscaneadoEn: registro.qrEscaneadoEn,
-    };
-}
-
-function aItemStaff(registro: RegistroStaff) {
-    return {
-        ...aItemPublico(registro),
         // El enum de Prisma conserva PRUEBA_PAGO (deprecado, ver schema.prisma)
         // por registros de prueba viejos; no tiene label en el catálogo actual.
         paqueteBaseLabel:
@@ -111,18 +101,4 @@ accessRouter.get("/historial", requireRole("STAFF_ACCESO", "SUPER_ADMIN"), async
     });
 
     return res.json({ historial: registros.map(aItemStaff) });
-});
-
-// Público: para la vista "Accesos" de /pantalla (ver pantalla.ts), que se
-// proyecta en las pantallas del evento sin login. Solo lo mínimo (nombre,
-// foto, categoría) — el paquete/academia no se expone públicamente.
-accessRouter.get("/recientes", registrationStatusLimiter, async (_req, res) => {
-    const registros = await prisma.registration.findMany({
-        where: { qrEscaneadoEn: { not: null } },
-        select: CAMPOS_PUBLICOS,
-        orderBy: { qrEscaneadoEn: "desc" },
-        take: 24,
-    });
-
-    return res.json({ recientes: registros.map(aItemPublico) });
 });

@@ -11,7 +11,6 @@ const VISTAS: { valor: VistaPantalla; label: string; descripcion: string }[] = [
     { valor: "ENFRENTAMIENTOS", label: "Enfrentamientos", descripcion: "Enfrentamiento(s) en curso." },
     { valor: "RESULTADOS", label: "Resultados", descripcion: "Resultados de la categoría enfocada." },
     { valor: "GANADORES", label: "Ganadores", descripcion: "Ganador(es) de la categoría enfocada." },
-    { valor: "ACCESOS", label: "Accesos", descripcion: "Últimas personas que ingresaron al evento (con foto)." },
 ];
 
 export default function AdminPantallasPage() {
