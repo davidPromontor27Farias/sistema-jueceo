@@ -145,12 +145,12 @@ export const REGLAS_POR_CATEGORIA: Record<
     { minEdad: number | null; maxEdad: number | null; sexoPermitido: Sexo[] | null }
 > = {
     KIDS_AMATEUR: { minEdad: 6, maxEdad: 12, sexoPermitido: null },
-    KIDS_BOYS: { minEdad: 6, maxEdad: 12, sexoPermitido: ["MASCULINO"] },
-    KIDS_GIRL: { minEdad: 6, maxEdad: 12, sexoPermitido: ["FEMENINO"] },
-    JUVENIL_BOYS: { minEdad: 13, maxEdad: 17, sexoPermitido: ["MASCULINO"] },
-    JUVENIL_GIRL: { minEdad: 13, maxEdad: 17, sexoPermitido: ["FEMENINO"] },
-    BGIRLS: { minEdad: 18, maxEdad: null, sexoPermitido: ["FEMENINO"] },
-    BBOYS: { minEdad: 18, maxEdad: null, sexoPermitido: ["MASCULINO"] },
+    KIDS_BOYS: { minEdad: 6, maxEdad: 13, sexoPermitido: ["MASCULINO"] },
+    KIDS_GIRL: { minEdad: 6, maxEdad: 13, sexoPermitido: ["FEMENINO"] },
+    JUVENIL_BOYS: { minEdad: 14, maxEdad: 17, sexoPermitido: ["MASCULINO"] },
+    JUVENIL_GIRL: { minEdad: 14, maxEdad: 17, sexoPermitido: ["FEMENINO"] },
+    BGIRLS: { minEdad: 18, maxEdad: 39, sexoPermitido: ["FEMENINO"] },
+    BBOYS: { minEdad: 18, maxEdad: 39, sexoPermitido: ["MASCULINO"] },
     MASTERS_40_PLUS: { minEdad: 40, maxEdad: null, sexoPermitido: null },
     PUBLICO_GENERAL: { minEdad: null, maxEdad: null, sexoPermitido: null },
     OPEN_STYLE_1V1: { minEdad: null, maxEdad: null, sexoPermitido: null },

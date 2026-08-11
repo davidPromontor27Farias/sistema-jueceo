@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
     "crear-admin": "ts-node src/scripts/crearSuperAdmin.ts",
+    "revisar-categorias-edad": "ts-node src/scripts/revisarCategoriasEdad.ts",
     "build": "prisma generate && tsc",
     "start": "prisma migrate deploy && node dist/index.js",
     "test": "echo \"Error: no test specified\" && exit 1"
