@@ -37,7 +37,6 @@ export type Categoria =
     | "KIDS_AMATEUR"
     | "KIDS_BOYS"
     | "KIDS_GIRL"
-    | "MASTERS_40_PLUS"
     | "JUVENIL_BOYS"
     | "JUVENIL_GIRL"
     | "BGIRLS"
@@ -63,7 +62,6 @@ export const CATEGORIAS_LABEL: Record<Categoria, string> = {
     KIDS_AMATEUR: "Kids Amateur",
     KIDS_BOYS: "Kids Boys",
     KIDS_GIRL: "Kids Girl",
-    MASTERS_40_PLUS: "Masters 40+",
     JUVENIL_BOYS: "Juvenil Boys",
     JUVENIL_GIRL: "Juvenil Girl",
     BGIRLS: "Bgirls",
@@ -103,7 +101,6 @@ export const REGLAS_POR_CATEGORIA: Record<
     JUVENIL_GIRL: { minEdad: 14, maxEdad: 17, sexoPermitido: ["FEMENINO"] },
     BGIRLS: { minEdad: 18, maxEdad: 39, sexoPermitido: ["FEMENINO"] },
     BBOYS: { minEdad: 18, maxEdad: 39, sexoPermitido: ["MASCULINO"] },
-    MASTERS_40_PLUS: { minEdad: 40, maxEdad: null, sexoPermitido: null },
     PUBLICO_GENERAL: { minEdad: null, maxEdad: null, sexoPermitido: null },
     OPEN_STYLE_1V1: { minEdad: null, maxEdad: null, sexoPermitido: null },
 };

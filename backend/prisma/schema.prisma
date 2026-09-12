@@ -14,7 +14,6 @@ enum Categoria {
   KIDS_AMATEUR
   KIDS_BOYS
   KIDS_GIRL
-  MASTERS_40_PLUS
   JUVENIL_BOYS
   JUVENIL_GIRL
   BGIRLS
@@ -64,6 +63,7 @@ enum RolAdmin {
   SUPER_ADMIN
   STAFF_ACCESO
   STAFF_JUECEO
+  JUEZ
 }
 
 model AdminUser {
@@ -77,6 +77,8 @@ model AdminUser {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  calificacionesEmitidas CalificacionJuez[]
+
   @@map("admin_users")
 }
 
@@ -89,9 +91,12 @@ enum EstatusCompetencia {
 // Estado en vivo de la competencia por categoría, controlado desde el panel
 // de administración (Sección 2 "Admin Total"). Una fila por valor de Categoria.
 model EstadoCategoria {
-  categoria Categoria           @id
-  estatus   EstatusCompetencia  @default(NO_INICIADA)
-  updatedAt DateTime            @updatedAt
+  categoria   Categoria           @id
+  estatus     EstatusCompetencia  @default(NO_INICIADA)
+  // Total de rondas del bracket generado (ceil(log2(N)) al momento de crearlo),
+  // para poder nombrar bien las rondas siguientes al avanzar automáticamente.
+  totalRondas Int?
+  updatedAt   DateTime            @updatedAt
 
   @@map("estado_categorias")
 }
@@ -109,6 +114,9 @@ model Enfrentamiento {
   id     String @id @default(uuid())
   categoria Categoria
   ronda  String // libre, ej. "Octavos", "Cuartos", "Semifinal", "Final"
+  // Secuencia determinística de la ronda (1, 2, 3...) para el avance
+  // automático del bracket; `ronda` sigue siendo el nombre legible.
+  rondaNumero Int @default(1)
   orden  Int    @default(0)
 
   competidorAId String?
@@ -123,8 +131,42 @@ model Enfrentamiento {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  calificaciones CalificacionJuez[]
+
   @@index([categoria])
   @@map("enfrentamientos")
+}
+
+// Calificación de un juez para un enfrentamiento: puntúa a ambos competidores
+// (A y B) en los 5 criterios del reglamento (Artículo 35), escala 1-10 cada
+// uno. Un juez califica cada enfrentamiento una sola vez (@@unique). El
+// ganador se calcula sumando estos puntajes entre todos los jueces activos
+// (ver intentarResolverEnfrentamiento en backend/src/routes/competencia.ts).
+model CalificacionJuez {
+  id String @id @default(uuid())
+
+  enfrentamientoId String
+  enfrentamiento   Enfrentamiento @relation(fields: [enfrentamientoId], references: [id])
+  juezId           String
+  juez             AdminUser      @relation(fields: [juezId], references: [id])
+
+  tecnicaA      Int
+  ejecucionA    Int
+  vocabularioA  Int
+  musicalidadA  Int
+  originalidadA Int
+
+  tecnicaB      Int
+  ejecucionB    Int
+  vocabularioB  Int
+  musicalidadB  Int
+  originalidadB Int
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([enfrentamientoId, juezId])
+  @@map("calificaciones_juez")
 }
 
 enum VistaPantalla {
