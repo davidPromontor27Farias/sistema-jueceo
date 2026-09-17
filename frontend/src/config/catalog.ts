@@ -126,8 +126,7 @@ export const PAQUETES_BASE_DESCRIPCION: Record<PaqueteBase, string> = {
     BOSS_EXPERIENCE: "Inscripción a 1 categoría de breaking + los 3 workshops.",
     BOSS_VIP:
         "Inscripción a 1 categoría + 3 workshops / Meet & Greet / Foto profesional / Fila rápida / Poster oficial / Lanyard VIP / Zona preferencial / Playera oficial / Bebida energetizante.",
-    SOLO_WORKSHOPS:
-        "En la selección de 3 workshops recibe un descuento de $150. Y para los primeros 50 lugares un descuento adicional del 20%. Total $480.00",
+    SOLO_WORKSHOPS: "En la selección de 3 workshops recibe un descuento de $150.",
 };
 
 // Paquetes que solo puede elegir quien se registra como competidor.

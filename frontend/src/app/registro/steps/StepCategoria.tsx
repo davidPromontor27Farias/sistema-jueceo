@@ -15,10 +15,8 @@ import {
     PRECIO_MXN_CENTAVOS_WORKSHOP_INDIVIDUAL,
     PRECIO_MXN_CENTAVOS_WORKSHOP_BUNDLE_3,
     PRECIO_MXN_CENTAVOS_OPEN_STYLE_ADDON,
-    PREVENTA_PORCENTAJE_DESCUENTO,
     calcularPrecioTotal,
     formatearMXN,
-    paqueteElegiblePreventa,
     type Categoria,
     type PaqueteBase,
 } from "@/config/catalog";
@@ -91,12 +89,6 @@ export function StepCategoria() {
         if (key === "SOLO_WORKSHOPS") return PRECIO_MXN_CENTAVOS_WORKSHOP_INDIVIDUAL;
         return PRECIO_MXN_CENTAVOS_POR_PAQUETE_BASE[key];
     };
-
-    // Solo informativo: cómo quedaría el precio con el 20% de preventa, para
-    // que se vea junto al precio de lista. No se aplica al seleccionar el
-    // paquete, eso solo pasa en el total final si la preventa sigue vigente.
-    const precioConDescuentoPreventa = (key: PaqueteBase) =>
-        Math.round(precioPaquete(key) * (1 - PREVENTA_PORCENTAJE_DESCUENTO));
 
     return (
         <>
@@ -215,11 +207,6 @@ export function StepCategoria() {
                                 <span>{label}</span>
                                 <span className="text-right">
                                     <span className="text-boss-green">{formatearMXN(precioPaquete(key))}</span>
-                                    {key !== "SOLO_WORKSHOPS" && paqueteElegiblePreventa(key) && (
-                                        <span className="ml-2 text-xs text-boss-gray">
-                                            (con 20% preventa: {formatearMXN(precioConDescuentoPreventa(key))})
-                                        </span>
-                                    )}
                                 </span>
                             </div>
                             <p className="mt-1 text-sm text-boss-gray">{PAQUETES_BASE_DESCRIPCION[key]}</p>
@@ -233,15 +220,11 @@ export function StepCategoria() {
                     )}
                     {!esPublico && (
                         <li className="space-y-1.5 text-sm text-boss-gray">
-                            <p>Workshop 1 - Footwork y Transiciones</p>
-                            <p>Workshop 2 - Powermoves</p>
-                            <p>Workshop 3 - Fundamentos y Estrategias</p>
+                            <p>Workshop 1 - Fundamentos y Progresiones de Power - Bboy Alvin</p>
+                            <p>Workshop 2 - Powermoves - Bboy Lil G</p>
+                            <p>Workshop 3 - Transiciones y Combos - Bboy Victor</p>
                             <p>
-                                Impartidos por referentes internacionales de BC One –{" "}
-                                <span className="text-white">Reveal próximamente</span>
-                            </p>
-                            <p>
-                                Los workshops serán el sábado 31 de octubre a partir de las 10am. Duración
+                                Los workshops serán el sábado 31 de octubre a partir de las 9:30am. Duración
                                 aproximada 1.5hrs cada workshop.
                             </p>
                         </li>
