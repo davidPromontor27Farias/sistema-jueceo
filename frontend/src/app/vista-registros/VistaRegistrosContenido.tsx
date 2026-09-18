@@ -54,7 +54,7 @@ export default function VistaRegistrosContenido() {
         datos.categorias.find((c) => c.categoria === categoriaActiva) ?? datos.categorias[0];
 
     return (
-        <div className="mt-6 flex min-h-0 w-full max-w-6xl flex-1 flex-col">
+        <div className="mt-2 flex min-h-0 w-full flex-1 flex-col">
             <div className="flex shrink-0 flex-wrap justify-center gap-2">
                 {datos.categorias.map((c) => (
                     <button
@@ -62,7 +62,7 @@ export default function VistaRegistrosContenido() {
                         type="button"
                         onClick={() => setCategoriaActiva(c.categoria)}
                         className={[
-                            "rounded-md border px-4 py-2 text-sm font-semibold uppercase tracking-wide transition-colors",
+                            "rounded-md border px-3 py-1.5 text-sm font-semibold uppercase tracking-wide transition-colors",
                             c.categoria === activa?.categoria
                                 ? "border-boss-red bg-boss-red/10 text-white"
                                 : "border-boss-border text-boss-gray hover:border-boss-red hover:text-white",
@@ -74,7 +74,7 @@ export default function VistaRegistrosContenido() {
             </div>
 
             {activa && (
-                <div className="mt-6 min-h-0 flex-1">
+                <div className="mt-2 min-h-0 flex-1">
                     <BracketFijo enfrentamientos={activa.enfrentamientos} />
                 </div>
             )}

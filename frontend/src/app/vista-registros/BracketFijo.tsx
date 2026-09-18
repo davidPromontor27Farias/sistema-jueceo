@@ -247,7 +247,6 @@ function TarjetaBracket({ enfrentamiento, pos }: { enfrentamiento: Enfrentamient
 function TarjetaBracketFinal({ enfrentamiento, pos }: { enfrentamiento: EnfrentamientoVista; pos: Posicion }) {
     return (
         <div className="relative">
-            <img src="/the-boss-logo.png" className="absolute left-1/2 top-3/4 w-80 -translate-x-1/2 -translate-y-1/2" />
             <div
                 className="absolute overflow-hidden rounded-lg border-2 border-boss-red bg-boss-panel text-left shadow-2xl shadow-black/60"
                 style={{ left: pos.x, top: pos.y - ALTO_TARJETA_FINAL / 2, width: ANCHO_TARJETA_FINAL }}

@@ -1,4 +1,3 @@
-import Image from "next/image";
 import { Suspense } from "react";
 import VistaRegistrosContenido from "./VistaRegistrosContenido";
 
@@ -8,9 +7,8 @@ import VistaRegistrosContenido from "./VistaRegistrosContenido";
 // menú de navegación.
 export default function VistaRegistrosPage() {
     return (
-        <main className="flex h-screen flex-col items-center overflow-hidden bg-boss-black px-4 py-6 text-center">
-            <Image src="/the-boss-logo.png" alt="THE BOSS — Breaking Battles" width={120} height={100} />
-            <h1 className="mt-4 font-display text-2xl uppercase tracking-widest text-boss-red">
+        <main className="flex h-screen flex-col items-center overflow-hidden bg-boss-black px-4 py-3 text-center">
+            <h1 className="shrink-0 font-display text-xl uppercase tracking-widest text-boss-red">
                 Registros por categoría
             </h1>
             <Suspense fallback={<p className="mt-6 text-boss-gray">Cargando...</p>}>
