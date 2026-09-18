@@ -108,19 +108,29 @@ export async function getRegistrationBySession(sessionId: string): Promise<ApiRe
 }
 
 export type CompetidorVista = {
+    id: string;
+    competidorId: string | null;
     nombreArtistico: string;
     nombres: string;
     apellidos: string;
     fotoUrl: string | null;
+} | null;
+
+export type EnfrentamientoVista = {
+    id: string;
+    categoria: Categoria;
+    ronda: string;
+    rondaNumero: number;
+    orden: number;
+    competidorA: CompetidorVista;
+    competidorB: CompetidorVista;
 };
 
 export type CategoriaVistaRegistros = {
     categoria: Categoria;
     label: string;
     totalInscritos: number;
-    ronda: string | null;
-    pares: [CompetidorVista, CompetidorVista][];
-    bye: CompetidorVista | null;
+    enfrentamientos: EnfrentamientoVista[];
 };
 
 export type VistaRegistros = {

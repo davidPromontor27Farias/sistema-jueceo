@@ -8,7 +8,7 @@ import VistaRegistrosContenido from "./VistaRegistrosContenido";
 // menú de navegación.
 export default function VistaRegistrosPage() {
     return (
-        <main className="flex min-h-screen flex-col items-center bg-boss-black px-4 py-10 text-center">
+        <main className="flex h-screen flex-col items-center overflow-hidden bg-boss-black px-4 py-6 text-center">
             <Image src="/the-boss-logo.png" alt="THE BOSS — Breaking Battles" width={120} height={100} />
             <h1 className="mt-4 font-display text-2xl uppercase tracking-widest text-boss-red">
                 Registros por categoría
