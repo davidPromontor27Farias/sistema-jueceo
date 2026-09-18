@@ -1,4 +1,5 @@
 import type { RegistrationFormValues } from "@/types/registrationForm";
+import type { Categoria } from "@/config/catalog";
 import { resolveApiUrl } from "./apiUrl";
 
 const API_URL = resolveApiUrl();
@@ -102,6 +103,48 @@ export async function getRegistrationBySession(sessionId: string): Promise<ApiRe
         return { ok: true, data };
     } catch (error) {
         console.error("Error al conectar con /api/registrations/by-session", error);
+        return { ok: false, error: "No se pudo conectar con el servidor." };
+    }
+}
+
+export type CompetidorVista = {
+    nombreArtistico: string;
+    nombres: string;
+    apellidos: string;
+    fotoUrl: string | null;
+};
+
+export type CategoriaVistaRegistros = {
+    categoria: Categoria;
+    label: string;
+    totalInscritos: number;
+    ronda: string | null;
+    pares: [CompetidorVista, CompetidorVista][];
+    bye: CompetidorVista | null;
+};
+
+export type VistaRegistros = {
+    categorias: CategoriaVistaRegistros[];
+    generadoEn: string;
+};
+
+export async function getVistaRegistros(token: string): Promise<ApiResult<VistaRegistros>> {
+    if (!API_URL) {
+        console.error("NEXT_PUBLIC_API_URL no está configurada");
+        return { ok: false, error: "El servidor no está disponible en este momento." };
+    }
+
+    try {
+        const response = await fetch(`${API_URL}/api/vista-registros?token=${encodeURIComponent(token)}`);
+        const data = (await parseJsonSafely(response)) as (VistaRegistros & { error?: string }) | null;
+
+        if (!response.ok || !data) {
+            return { ok: false, error: data?.error ?? "No se pudo cargar la información." };
+        }
+
+        return { ok: true, data };
+    } catch (error) {
+        console.error("Error al conectar con /api/vista-registros", error);
         return { ok: false, error: "No se pudo conectar con el servidor." };
     }
 }

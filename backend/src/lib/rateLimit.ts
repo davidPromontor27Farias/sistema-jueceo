@@ -35,3 +35,14 @@ export const adminLoginLimiter = rateLimit({
     legacyHeaders: false,
     message: { error: "Demasiados intentos, intenta de nuevo más tarde" },
 });
+
+// Vista de solo lectura (sin login) para que el cliente vea cómo van los
+// registros: protegida por token, pero igual se limita por si el enlace se
+// comparte de más o alguien intenta adivinar el token a fuerza bruta.
+export const vistaRegistrosLimiter = rateLimit({
+    windowMs: 5 * 60 * 1000,
+    limit: 60,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: "Demasiadas solicitudes, intenta de nuevo más tarde" },
+});

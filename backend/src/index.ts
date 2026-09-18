@@ -9,6 +9,7 @@ import { authRouter } from "./routes/auth";
 import { adminsRouter } from "./routes/admins";
 import { competenciaRouter } from "./routes/competencia";
 import { pantallaRouter } from "./routes/pantalla";
+import { vistaRegistrosRouter } from "./routes/vistaRegistros";
 import { origenesFrontendPermitidos } from "./lib/origenes";
 
 
@@ -44,6 +45,7 @@ app.use("/api/auth", authRouter);
 app.use("/api/admins", adminsRouter);
 app.use("/api/competencia", competenciaRouter);
 app.use("/api/pantalla", pantallaRouter);
+app.use("/api/vista-registros", vistaRegistrosRouter);
 
 app.get("/health", (_req, res) =>  {
     res.json({status: "ok"});
