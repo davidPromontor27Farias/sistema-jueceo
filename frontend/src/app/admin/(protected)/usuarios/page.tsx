@@ -15,8 +15,12 @@ const ROL_LABEL: Record<RolAdmin, string> = {
     SUPER_ADMIN: "Admin total",
     STAFF_ACCESO: "Staff de acceso",
     STAFF_JUECEO: "Staff de jueceo",
+    JUEZ: "Juez",
 };
-const ROLES: RolAdmin[] = ["SUPER_ADMIN", "STAFF_ACCESO", "STAFF_JUECEO"];
+
+// STAFF_JUECEO no se ofrece aquí: el SUPER_ADMIN ya incluye ese acceso, no
+// hace falta crear cuentas con ese rol por separado.
+const ROLES: RolAdmin[] = ["SUPER_ADMIN", "STAFF_ACCESO", "JUEZ"];
 
 export default function AdminUsuariosPage() {
     return (

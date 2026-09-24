@@ -106,11 +106,51 @@ export default function QrStatus() {
 
     const esPublico = estado.tipoBoleto === "GENERAL";
 
+    // @react-pdf/renderer resuelve <Image src="https://..."> con su propio
+    // fetch interno, y si ese fetch falla (por la razón que sea) simplemente
+    // omite la imagen sin tronar el PDF. El QR nunca falla porque ya se
+    // genera como data URI (no necesita red); acá se hace lo mismo con la
+    // foto: se descarga en el navegador ANTES de armar el PDF y se le pasa a
+    // react-pdf ya como data URI, sin dejarle su propio fetch de por medio.
+    //
+    // Aparte: las fotos subidas a Cloudinary suelen quedar como JPEG
+    // progresivo (típico de celulares/editores), formato que el
+    // decodificador JPEG de @react-pdf/renderer no soporta bien — el PDF se
+    // genera igual, pero el recuadro de la foto sale en blanco (confirmado:
+    // el archivo sí crece de tamaño, los bytes se embeben, pero no
+    // renderizan). Pedirle a Cloudinary que la reconvierta a PNG al vuelo
+    // (con un tope de ancho, ya que en el pase se ve a 56x72pt) evita ese
+    // problema de compatibilidad de una sola vez, sin importar cómo haya
+    // quedado codificada la foto original.
+    function urlFotoParaPdf(url: string): string {
+        return url.replace("/upload/", "/upload/f_png,c_limit,w_600/");
+    }
+
+    async function urlAFotoBase64(url: string): Promise<string | null> {
+        try {
+            const respuesta = await fetch(urlFotoParaPdf(url));
+            if (!respuesta.ok) return null;
+            const blob = await respuesta.blob();
+            return await new Promise<string>((resolve, reject) => {
+                const lector = new FileReader();
+                lector.onloadend = () => resolve(lector.result as string);
+                lector.onerror = () => reject(new Error("No se pudo leer la foto"));
+                lector.readAsDataURL(blob);
+            });
+        } catch (error) {
+            console.error("Error al descargar la foto para el PDF", error);
+            return null;
+        }
+    }
+
     async function handleDescargarPdf() {
         if (estado.fase !== "listo") return;
         setGenerandoPdf(true);
         try {
-            const [{ pdf }, { PaseDocument }] = await Promise.all([import("@react-pdf/renderer"), import("./PaseDocument")]);
+            const [[{ pdf }, { PaseDocument }], fotoBase64] = await Promise.all([
+                Promise.all([import("@react-pdf/renderer"), import("./PaseDocument")]),
+                estado.fotoUrl ? urlAFotoBase64(estado.fotoUrl) : Promise.resolve(null),
+            ]);
             const blob = await pdf(
                 <PaseDocument
                     esPublico={esPublico}
@@ -118,7 +158,7 @@ export default function QrStatus() {
                     categoriaLabel={estado.categoriaLabel}
                     competidorId={estado.competidorId}
                     qrDataUrl={estado.qrDataUrl}
-                    fotoUrl={estado.fotoUrl}
+                    fotoUrl={fotoBase64}
                 />,
             ).toBlob();
             const url = URL.createObjectURL(blob);

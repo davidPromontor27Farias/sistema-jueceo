@@ -4,8 +4,13 @@ import { prisma } from "../lib/prisma";
 import { hashPassword } from "../lib/auth";
 import { requireRole } from "../middleware/requireAuth";
 import { sinIndefinidos } from "../lib/utils";
+import { reintentarResolucionesPendientes } from "./competencia";
 
-const ROLES = ["SUPER_ADMIN", "STAFF_ACCESO", "STAFF_JUECEO"] as const;
+// STAFF_JUECEO no se ofrece para crear/editar cuentas: el SUPER_ADMIN ya
+// tiene ese acceso incluido, así que no hace falta ese rol por separado. Se
+// deja fuera de esta lista (no del enum de Prisma) para no tener que migrar
+// nada si algún día vuelve a hacer falta.
+const ROLES = ["SUPER_ADMIN", "STAFF_ACCESO", "JUEZ"] as const;
 
 const crearAdminSchema = z.object({
     nombre: z.string().trim().min(1),
@@ -74,6 +79,17 @@ adminsRouter.patch("/:id", async (req, res) => {
             data: sinIndefinidos({ ...resto, passwordHash: password ? await hashPassword(password) : undefined }),
             select: { id: true, nombre: true, correo: true, rol: true, activo: true, createdAt: true },
         });
+
+        // Si se (des)activó a un JUEZ, el número de jueces activos cambió: una
+        // batalla que se quedó esperando una calificación de más (o de menos)
+        // puede que ya esté completa con el conteo nuevo. Sin esto se queda
+        // congelada en EN_CURSO para siempre, porque nada vuelve a revisarla
+        // hasta que alguien califique de nuevo — y para entonces ya nadie va a
+        // calificarla otra vez.
+        if (admin.rol === "JUEZ" && resto.activo !== undefined) {
+            await reintentarResolucionesPendientes();
+        }
+
         return res.json({ admin });
     } catch (error: any) {
         if (error.code === "P2025") {

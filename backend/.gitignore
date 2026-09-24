@@ -3,3 +3,6 @@ node_modules
 .env
 
 /src/generated/prisma
+
+# Datos/tickets de prueba generados localmente (no es información real)
+/tickets-prueba

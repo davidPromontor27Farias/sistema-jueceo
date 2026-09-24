@@ -8,6 +8,8 @@
     "crear-admin": "ts-node src/scripts/crearSuperAdmin.ts",
     "revisar-categorias-edad": "ts-node src/scripts/revisarCategoriasEdad.ts",
     "corregir-categoria-kids13": "ts-node src/scripts/corregirCategoriaKids13.ts",
+    "generar-registros-prueba": "ts-node src/scripts/generarRegistrosPrueba.ts",
+    "marcar-tickets-prueba-escaneados": "ts-node src/scripts/marcarTicketsPruebaComoEscaneados.ts",
     "build": "prisma generate && tsc",
     "start": "prisma migrate deploy && node dist/index.js",
     "test": "echo \"Error: no test specified\" && exit 1"

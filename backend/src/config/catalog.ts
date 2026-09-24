@@ -46,6 +46,26 @@ export type Categoria =
 
 export type Sexo = "MASCULINO" | "FEMENINO";
 
+// Estado del QR de acceso, ver backend/src/routes/access.ts para las
+// transiciones (NO_USADO -> DENTRO -> FUERA_TEMPORAL -> REINGRESO -> ...).
+export type EstadoAcceso = "NO_USADO" | "DENTRO" | "FUERA_TEMPORAL" | "REINGRESO" | "BLOQUEADO";
+
+export const ESTADO_ACCESO_LABEL: Record<EstadoAcceso, string> = {
+    NO_USADO: "No usado",
+    DENTRO: "Dentro",
+    FUERA_TEMPORAL: "Fuera temporal",
+    REINGRESO: "Dentro (reingresó)",
+    BLOQUEADO: "Bloqueado",
+};
+
+export type TipoEventoAcceso =
+    | "ENTRADA"
+    | "SALIDA_TEMPORAL"
+    | "REINGRESO"
+    | "INTENTO_BLOQUEADO"
+    | "BLOQUEO"
+    | "DESBLOQUEO";
+
 export type TipoBoleto = "GENERAL" | "COMPETIDOR" | "STAFF" | "VIP" | "INVITADO";
 
 export type PaqueteBase =

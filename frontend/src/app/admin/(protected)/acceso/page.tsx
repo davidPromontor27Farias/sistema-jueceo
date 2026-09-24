@@ -5,9 +5,32 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { RequireRol } from "../layout";
 import { inputClass } from "../../../registro/components/Field";
 import { useAdminSession } from "../../AdminSessionContext";
-import { getHistorialAcceso, verificarAcceso, type AccessVerifyResult, type HistorialAccesoItem } from "@/lib/adminApi";
+import {
+    bloquearAcceso,
+    getHistorialAcceso,
+    verificarAcceso,
+    type AccessVerifyResult,
+    type HistorialAccesoItem,
+} from "@/lib/adminApi";
+import type { EstadoAcceso } from "@/config/catalog";
 
-const PAUSA_ENTRE_ESCANEOS_MS = 4000;
+const ESTADO_BADGE_CLASS: Record<EstadoAcceso, string> = {
+    NO_USADO: "border-boss-border text-boss-gray",
+    DENTRO: "border-boss-green/50 bg-boss-green/10 text-boss-green",
+    FUERA_TEMPORAL: "border-yellow-500/50 bg-yellow-500/10 text-yellow-400",
+    REINGRESO: "border-sky-500/50 bg-sky-500/10 text-sky-400",
+    BLOQUEADO: "border-boss-red/50 bg-boss-red/10 text-boss-red",
+};
+
+function BadgeEstadoAcceso({ estado, label }: { estado: EstadoAcceso; label: string }) {
+    return (
+        <span
+            className={`shrink-0 rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-wide ${ESTADO_BADGE_CLASS[estado]}`}
+        >
+            {label}
+        </span>
+    );
+}
 
 export default function AdminAccesoPage() {
     return (
@@ -91,6 +114,9 @@ function AccesosSoloLectura() {
                             <p className="mt-1 truncate text-base font-semibold uppercase tracking-wide text-boss-red">
                                 {persona.categoriaLabel}
                             </p>
+                            <div className="mt-1">
+                                <BadgeEstadoAcceso estado={persona.estadoAcceso} label={persona.estadoAccesoLabel} />
+                            </div>
                             {persona.academiaCrew && (
                                 <p className="truncate text-base text-boss-gray">{persona.academiaCrew}</p>
                             )}
@@ -114,6 +140,7 @@ function EscanerContenido() {
     const videoRef = useRef<HTMLVideoElement>(null);
     const bloqueadoRef = useRef(false);
     const [resultado, setResultado] = useState<AccessVerifyResult | null>(null);
+    const [tokenActual, setTokenActual] = useState("");
     const [errorSistema, setErrorSistema] = useState<string | null>(null);
     const [procesando, setProcesando] = useState(false);
     const [camaraError, setCamaraError] = useState<string | null>(null);
@@ -182,14 +209,26 @@ function EscanerContenido() {
         setProcesando(false);
         if (!respuesta.ok) {
             setErrorSistema(respuesta.error);
+            // Sin modal de confirmación que cerrar (fue un error de conexión,
+            // no un resultado de escaneo) — se puede volver a intentar de una.
+            bloqueadoRef.current = false;
         } else {
             setResultado(respuesta.data);
+            setTokenActual(limpio);
             if (respuesta.data.ok) cargarHistorial();
+            // La cámara sigue prendida y decodificando de fondo mientras el
+            // modal está abierto; bloqueadoRef se mantiene en true (no
+            // desbloqueado por un timer) hasta que el staff cierre el modal a
+            // mano — así no se procesa un segundo escaneo por debajo mientras
+            // todavía están viendo el resultado del primero.
         }
+    }
 
-        setTimeout(() => {
-            bloqueadoRef.current = false;
-        }, PAUSA_ENTRE_ESCANEOS_MS);
+    // Se llama al cerrar el modal (botón "Cerrar" o clic afuera): recién ahí
+    // se vuelve a permitir procesar un nuevo escaneo.
+    function cerrarModal() {
+        setResultado(null);
+        bloqueadoRef.current = false;
     }
 
     const onSubmitManual = (event: FormEvent) => {
@@ -232,25 +271,45 @@ function EscanerContenido() {
 
             <HistorialPanel historial={historial} />
 
-            {resultado && <ModalResultado resultado={resultado} onCerrar={() => setResultado(null)} />}
+            {resultado && (
+                <ModalResultado
+                    resultado={resultado}
+                    qrToken={tokenActual}
+                    onCerrar={cerrarModal}
+                    onCambioBloqueo={cargarHistorial}
+                />
+            )}
         </div>
     );
 }
 
-function ModalResultado({ resultado, onCerrar }: { resultado: AccessVerifyResult; onCerrar: () => void }) {
-    useEffect(() => {
-        const id = setTimeout(onCerrar, PAUSA_ENTRE_ESCANEOS_MS);
-        return () => clearTimeout(id);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [resultado]);
+const TIPO_EVENTO_ENCABEZADO: Record<string, string> = {
+    ENTRADA: "Entrada registrada",
+    SALIDA_TEMPORAL: "Salida temporal registrada",
+    REINGRESO: "Reingreso registrado",
+};
+
+function ModalResultado({
+    resultado,
+    qrToken,
+    onCerrar,
+    onCambioBloqueo,
+}: {
+    resultado: AccessVerifyResult;
+    qrToken: string;
+    onCerrar: () => void;
+    onCambioBloqueo: () => void;
+}) {
+    const [procesandoBloqueo, setProcesandoBloqueo] = useState(false);
+    const [errorBloqueo, setErrorBloqueo] = useState<string | null>(null);
+    const [estadoLocal, setEstadoLocal] = useState<{ estadoAcceso: EstadoAcceso; estadoAccesoLabel: string } | null>(
+        "estadoAcceso" in resultado ? { estadoAcceso: resultado.estadoAcceso, estadoAccesoLabel: resultado.estadoAccesoLabel } : null,
+    );
 
     const esOk = resultado.ok;
-    const esYaUsado = !resultado.ok && resultado.motivo === "YA_USADO";
-    const nombre = resultado.ok
-        ? resultado.nombreArtistico || `${resultado.nombres} ${resultado.apellidos}`
-        : "nombreArtistico" in resultado
-          ? resultado.nombreArtistico
-          : undefined;
+    const esBloqueado = !resultado.ok && resultado.motivo === "BLOQUEADO";
+    const esConflicto = !resultado.ok && resultado.motivo === "CONFLICTO";
+    const nombre = "nombreArtistico" in resultado ? resultado.nombreArtistico || `${resultado.nombres} ${resultado.apellidos}` : undefined;
     const fotoUrl = "fotoUrl" in resultado ? resultado.fotoUrl : undefined;
     const categoriaLabel = "categoriaLabel" in resultado ? resultado.categoriaLabel : undefined;
     const tipoBoleto = "tipoBoleto" in resultado ? resultado.tipoBoleto : undefined;
@@ -259,11 +318,33 @@ function ModalResultado({ resultado, onCerrar }: { resultado: AccessVerifyResult
     const academiaCrew = "academiaCrew" in resultado ? resultado.academiaCrew : undefined;
     const workshopsSeleccionados = "workshopsSeleccionados" in resultado ? resultado.workshopsSeleccionados : undefined;
     const agregarOpenStyle = "agregarOpenStyle" in resultado ? resultado.agregarOpenStyle : undefined;
+    const posibleDuplicado = resultado.ok && resultado.posibleDuplicado;
+    const segundosDesdeUltimoEvento = resultado.ok ? resultado.segundosDesdeUltimoEvento : undefined;
 
-    const encabezado = esOk ? "Acceso concedido" : esYaUsado ? "QR ya usado" : "QR inválido";
+    const encabezado = esOk
+        ? (TIPO_EVENTO_ENCABEZADO[resultado.tipoEvento] ?? "Acceso registrado")
+        : esBloqueado
+          ? "QR bloqueado"
+          : esConflicto
+            ? "Intenta de nuevo"
+            : "QR inválido";
     const colorEncabezado = esOk
         ? "border-boss-green/50 bg-boss-green/10 text-boss-green"
         : "border-boss-red/50 bg-boss-red/10 text-boss-red";
+
+    async function alternarBloqueo(bloquear: boolean) {
+        if (!qrToken) return;
+        setProcesandoBloqueo(true);
+        setErrorBloqueo(null);
+        const respuesta = await bloquearAcceso(qrToken, bloquear);
+        setProcesandoBloqueo(false);
+        if (!respuesta.ok) {
+            setErrorBloqueo(respuesta.error);
+            return;
+        }
+        setEstadoLocal({ estadoAcceso: respuesta.data.estadoAcceso, estadoAccesoLabel: respuesta.data.estadoAccesoLabel });
+        onCambioBloqueo();
+    }
 
     return (
         <div
@@ -296,7 +377,19 @@ function ModalResultado({ resultado, onCerrar }: { resultado: AccessVerifyResult
 
                     {nombre && <p className="font-display text-2xl uppercase text-white">{nombre}</p>}
 
+                    {posibleDuplicado && (
+                        <div className="w-full rounded-md border-2 border-boss-red bg-boss-red/20 p-3 text-sm font-bold uppercase tracking-wide text-boss-red">
+                            ⚠ Posible duplicado
+                            {typeof segundosDesdeUltimoEvento === "number" && (
+                                <span className="block font-normal normal-case tracking-normal">
+                                    Este QR se escaneó hace {segundosDesdeUltimoEvento}s. Verifica identidad.
+                                </span>
+                            )}
+                        </div>
+                    )}
+
                     <div className="flex flex-wrap items-center justify-center gap-2 text-sm">
+                        {estadoLocal && <BadgeEstadoAcceso estado={estadoLocal.estadoAcceso} label={estadoLocal.estadoAccesoLabel} />}
                         {categoriaLabel && (
                             <span className="rounded-full border border-boss-border px-3 py-1 text-boss-gray">
                                 {categoriaLabel}
@@ -338,10 +431,31 @@ function ModalResultado({ resultado, onCerrar }: { resultado: AccessVerifyResult
                         </div>
                     )}
 
-                    {!esOk && !esYaUsado && (
+                    {!esOk && !esBloqueado && !esConflicto && (
                         <p className="text-sm text-boss-gray">Este código no corresponde a un boleto pagado.</p>
                     )}
+
+                    {errorBloqueo && <p className="text-sm font-medium text-red-400">{errorBloqueo}</p>}
                 </div>
+
+                {estadoLocal && qrToken && (
+                    <button
+                        type="button"
+                        disabled={procesandoBloqueo}
+                        onClick={() => alternarBloqueo(estadoLocal.estadoAcceso !== "BLOQUEADO")}
+                        className={`w-full border-t border-boss-border py-3 text-sm font-semibold uppercase tracking-wide transition-colors disabled:opacity-50 ${
+                            estadoLocal.estadoAcceso === "BLOQUEADO"
+                                ? "text-boss-green hover:text-boss-green"
+                                : "text-boss-red hover:text-boss-red"
+                        }`}
+                    >
+                        {procesandoBloqueo
+                            ? "Procesando..."
+                            : estadoLocal.estadoAcceso === "BLOQUEADO"
+                              ? "Desbloquear este QR"
+                              : "Bloquear este QR"}
+                    </button>
+                )}
 
                 <button
                     type="button"
@@ -377,7 +491,7 @@ function HistorialPanel({ historial }: { historial: HistorialAccesoItem[] | null
                         ) : (
                             <div className="h-10 w-10 shrink-0 rounded-full border border-boss-border bg-boss-black" />
                         )}
-                        <div className="min-w-0">
+                        <div className="min-w-0 flex-1">
                             <p className="truncate text-sm font-medium text-white">
                                 {item.nombreArtistico || `${item.nombres} ${item.apellidos}`}
                             </p>
@@ -391,6 +505,7 @@ function HistorialPanel({ historial }: { historial: HistorialAccesoItem[] | null
                                 </p>
                             )}
                         </div>
+                        <BadgeEstadoAcceso estado={item.estadoAcceso} label={item.estadoAccesoLabel} />
                     </div>
                 ))}
             </div>

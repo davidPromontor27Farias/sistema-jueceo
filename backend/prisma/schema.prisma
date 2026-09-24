@@ -77,13 +77,73 @@ model AdminUser {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  calificacionesEmitidas CalificacionJuez[]
+  calificacionesEmitidas          CalificacionJuez[]
+  puntuacionesPreseleccionEmitidas PuntuacionPreseleccion[]
+  eventosAcceso                   AccesoEvento[]
 
   @@map("admin_users")
 }
 
+// Estado actual del QR de acceso de un registro. Uno solo por QR:
+// NO_USADO -> nunca se ha escaneado.
+// DENTRO -> escaneado por primera vez, está dentro del evento.
+// FUERA_TEMPORAL -> salió (ej. a comer), puede volver a entrar.
+// REINGRESO -> volvió a entrar después de una salida temporal.
+// BLOQUEADO -> el staff de acceso lo bloqueó a mano (fraude, mal comportamiento, etc).
+enum EstadoAcceso {
+  NO_USADO
+  DENTRO
+  FUERA_TEMPORAL
+  REINGRESO
+  BLOQUEADO
+}
+
+// Qué representó cada fila del log de AccesoEvento.
+enum TipoEventoAcceso {
+  ENTRADA
+  SALIDA_TEMPORAL
+  REINGRESO
+  INTENTO_BLOQUEADO
+  BLOQUEO
+  DESBLOQUEO
+}
+
+// Log de auditoría de TODO evento de acceso (uno por escaneo o acción de
+// bloqueo/desbloqueo), independiente del estado actual en Registration.estadoAcceso.
+// Sirve para reconstruir el historial completo de entradas/salidas/reingresos
+// de una persona y para investigar intentos de duplicidad (ver posibleDuplicado).
+model AccesoEvento {
+  id String @id @default(uuid())
+
+  registrationId String
+  registration   Registration @relation(fields: [registrationId], references: [id])
+
+  tipo           TipoEventoAcceso
+  estadoAnterior EstadoAcceso
+  estadoNuevo    EstadoAcceso
+
+  // true si este evento ocurrió muy poco después del evento anterior del mismo
+  // QR (ver VENTANA_DUPLICADO_SEGUNDOS en backend/src/routes/access.ts):
+  // posible señal de un QR clonado/compartido usado en dos accesos a la vez.
+  posibleDuplicado          Boolean @default(false)
+  segundosDesdeUltimoEvento Int?
+
+  staffId String?
+  staff   AdminUser? @relation(fields: [staffId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@index([registrationId, createdAt])
+  @@map("accesos_eventos")
+}
+
 enum EstatusCompetencia {
   NO_INICIADA
+  // Fase de "Filtro"/Cypher estilo Red Bull BC One: los jueces puntúan a cada
+  // inscrito individualmente (PuntuacionPreseleccion) antes de armar
+  // cualquier enfrentamiento. Opcional por categoría — las chicas pueden
+  // saltar directo a EN_CURSO y usar el sorteo aleatorio de siempre.
+  PRESELECCION
   EN_CURSO
   FINALIZADA
 }
@@ -97,6 +157,16 @@ model EstadoCategoria {
   // para poder nombrar bien las rondas siguientes al avanzar automáticamente.
   totalRondas Int?
   updatedAt   DateTime            @updatedAt
+
+  // Turno actual de la fase de Preselección: qué participante está en tarima
+  // ahora mismo, compartido entre /pantalla (overlay con cronómetro de 30s,
+  // ver frontend/src/app/pantalla/SecuenciaPreseleccion.tsx) y admin/jueceo
+  // (a quién calificar). Se limpia (ambos a null) al salir de PRESELECCION,
+  // ya sea generando el Top Bracket o cambiando el estatus a mano — ver
+  // backend/src/routes/competencia.ts.
+  turnoPreseleccionActualId   String?
+  turnoPreseleccionActual     Registration? @relation(fields: [turnoPreseleccionActualId], references: [id])
+  turnoPreseleccionIniciadoEn DateTime?
 
   @@map("estado_categorias")
 }
@@ -128,6 +198,16 @@ model Enfrentamiento {
 
   estatus EstatusEnfrentamiento @default(PENDIENTE)
 
+  // Si el admin corta el turno de un competidor antes de que se agote el
+  // tiempo (ej. terminó su presentación a los 45s de un turno de 60s), se
+  // guarda aquí el momento exacto del corte. La secuencia en /pantalla y en
+  // el panel de control de pantallas (SUPER_ADMIN, ver
+  // frontend/src/app/pantalla/SecuenciaBatalla.tsx) usa este timestamp en vez
+  // de la duración fija para pasar al siguiente competidor sin esperar el
+  // resto del tiempo.
+  turnoACortadoEn DateTime?
+  turnoBCortadoEn DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -138,7 +218,7 @@ model Enfrentamiento {
 }
 
 // Calificación de un juez para un enfrentamiento: puntúa a ambos competidores
-// (A y B) en los 5 criterios del reglamento (Artículo 35), escala 1-10 cada
+// (A y B) en los 5 criterios del reglamento (Artículo 35), escala 1-5 cada
 // uno. Un juez califica cada enfrentamiento una sola vez (@@unique). El
 // ganador se calcula sumando estos puntajes entre todos los jueces activos
 // (ver intentarResolverEnfrentamiento en backend/src/routes/competencia.ts).
@@ -167,6 +247,34 @@ model CalificacionJuez {
 
   @@unique([enfrentamientoId, juezId])
   @@map("calificaciones_juez")
+}
+
+// Puntuación individual de un juez a UN participante durante la fase de
+// Preselección (Filtro/Cypher estilo Red Bull BC One), antes de que exista
+// ningún Enfrentamiento: mismos 5 criterios del reglamento (Artículo 35),
+// escala 1-5, pero sin comparar A vs B. Un juez puntúa a cada participante
+// una sola vez (@@unique). El ranking para el corte del Top N se calcula
+// sumando estos puntajes entre todos los jueces activos (ver
+// generar-top-bracket en backend/src/routes/competencia.ts).
+model PuntuacionPreseleccion {
+  id String @id @default(uuid())
+
+  registrationId String
+  registration   Registration @relation(fields: [registrationId], references: [id])
+  juezId         String
+  juez           AdminUser    @relation(fields: [juezId], references: [id])
+
+  tecnica      Int
+  ejecucion    Int
+  vocabulario  Int
+  musicalidad  Int
+  originalidad Int
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([registrationId, juezId])
+  @@map("puntuaciones_preseleccion")
 }
 
 enum VistaPantalla {
@@ -225,9 +333,14 @@ model Registration {
   stripeSessionId       String?     @unique
   stripePaymentIntentId String?
 
-  // Acceso (se genera al confirmarse el pago, es de un solo uso)
-  qrToken               String?     @unique
+  // Acceso: el QR se genera al confirmarse el pago y es reutilizable durante
+  // el evento (entradas/salidas temporales), ver backend/src/routes/access.ts.
+  // qrEscaneadoEn guarda el momento de la PRIMERA entrada (no se sobrescribe
+  // después); estadoAcceso es la fuente de verdad del estado actual, y
+  // AccesoEvento lleva el historial completo de cada entrada/salida/reingreso.
+  qrToken               String?      @unique
   qrEscaneadoEn         DateTime?
+  estadoAcceso          EstadoAcceso @default(NO_USADO)
 
   // ID fijo de competidor (ej. "BB-023"), asignado al confirmarse el pago.
   // Se reutiliza entre años para el mismo correo, ver backend/src/routes/stripeWebhook.ts
@@ -239,6 +352,9 @@ model Registration {
   enfrentamientosComoA       Enfrentamiento[] @relation("EnfrentamientoCompetidorA")
   enfrentamientosComoB       Enfrentamiento[] @relation("EnfrentamientoCompetidorB")
   enfrentamientosGanados     Enfrentamiento[] @relation("EnfrentamientoGanador")
+  eventosAcceso              AccesoEvento[]
+  puntuacionesPreseleccion   PuntuacionPreseleccion[]
+  turnosPreseleccionComoActual EstadoCategoria[]
 
   @@index([estatusPago])
   @@index([categoria])

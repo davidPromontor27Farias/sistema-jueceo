@@ -179,14 +179,26 @@ export interface PasePdfDatos {
     competidorId: string | null;
     qrDataUrl: string;
     fotoUrl: string | null;
+    // En el navegador "/the-boss-logo.png" se resuelve contra el sitio; para
+    // generar PDFs fuera del navegador (ver scripts/) se pasa el Buffer del
+    // archivo ya leído (evita que react-pdf intente resolverlo como URL).
+    logoSrc?: string | Buffer;
 }
 
-export function PaseDocument({ esPublico, nombreArtistico, categoriaLabel, competidorId, qrDataUrl, fotoUrl }: PasePdfDatos) {
+export function PaseDocument({
+    esPublico,
+    nombreArtistico,
+    categoriaLabel,
+    competidorId,
+    qrDataUrl,
+    fotoUrl,
+    logoSrc = "/the-boss-logo.png",
+}: PasePdfDatos) {
     return (
         <Document>
             <Page size="A5" style={styles.page} wrap={false}>
                 <View style={styles.marca}>
-                    <Image src="/the-boss-logo.png" style={styles.marcaLogo} />
+                    <Image src={logoSrc} style={styles.marcaLogo} />
                 </View>
 
                 <View style={styles.tarjeta}>

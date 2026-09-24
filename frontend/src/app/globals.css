@@ -14,6 +14,8 @@
   --color-boss-border: #2c2c2c;
   --color-boss-red: #e2091a;
   --color-boss-red-dark: #7a0510;
+  --color-boss-blue: #1f6fff;
+  --color-boss-blue-dark: #0a2a70;
   --color-boss-green: #4ee44e;
   --color-boss-gray: #9a9a9a;
 
@@ -55,4 +57,371 @@ body {
 
 .animate-section-out {
   animation: section-out 0.3s ease-in forwards;
+}
+
+@keyframes llama-flicker {
+  0%,
+  100% {
+    text-shadow:
+      0 0 12px rgba(255, 120, 0, 0.85),
+      0 0 26px rgba(255, 60, 0, 0.6),
+      0 0 45px rgba(255, 20, 0, 0.35);
+  }
+  25% {
+    text-shadow:
+      0 0 18px rgba(255, 180, 0, 0.95),
+      0 0 34px rgba(255, 80, 0, 0.7),
+      0 0 55px rgba(255, 20, 0, 0.4);
+  }
+  50% {
+    text-shadow:
+      0 0 10px rgba(255, 140, 0, 0.8),
+      0 0 22px rgba(255, 50, 0, 0.55),
+      0 0 40px rgba(255, 10, 0, 0.3);
+  }
+  75% {
+    text-shadow:
+      0 0 20px rgba(255, 200, 0, 1),
+      0 0 38px rgba(255, 90, 0, 0.75),
+      0 0 60px rgba(255, 30, 0, 0.45);
+  }
+}
+
+@keyframes impacto-entrada {
+  0% {
+    opacity: 0;
+    transform: scale(1.6) rotate(-3deg);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(0.95) rotate(1deg);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) rotate(0deg);
+  }
+}
+
+@keyframes anuncio-izq {
+  0% {
+    opacity: 0;
+    transform: translateX(-120px) rotate(-4deg);
+  }
+  70% {
+    opacity: 1;
+    transform: translateX(8px) rotate(1deg);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0) rotate(0deg);
+  }
+}
+
+@keyframes anuncio-der {
+  0% {
+    opacity: 0;
+    transform: translateX(120px) rotate(4deg);
+  }
+  70% {
+    opacity: 1;
+    transform: translateX(-8px) rotate(-1deg);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0) rotate(0deg);
+  }
+}
+
+@keyframes numero-pulso {
+  0% {
+    transform: scale(1.4);
+    opacity: 0.4;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.animate-impacto-fuego {
+  animation:
+    impacto-entrada 0.5s cubic-bezier(0.34, 1.56, 0.64, 1),
+    llama-flicker 0.6s ease-in-out infinite 0.5s;
+}
+
+.animate-anuncio-izq-fuego {
+  animation:
+    anuncio-izq 0.5s cubic-bezier(0.34, 1.56, 0.64, 1),
+    llama-flicker 0.6s ease-in-out infinite 0.5s;
+}
+
+.animate-anuncio-der-fuego {
+  animation:
+    anuncio-der 0.5s cubic-bezier(0.34, 1.56, 0.64, 1),
+    llama-flicker 0.6s ease-in-out infinite 0.5s;
+}
+
+.animate-numero-fuego {
+  animation:
+    numero-pulso 0.35s ease-out,
+    llama-flicker 0.6s ease-in-out infinite 0.35s;
+}
+
+/* Solo el "pop" de entrada del número del cronómetro, sin el brillo naranja
+   de fuego (llama-flicker) — se usa donde el número ya tiene su propio color
+   azul/rojo (pantalla del competidor en turno) y el naranja desentonaría. */
+.animate-numero-pop {
+  animation: numero-pulso 0.35s ease-out;
+}
+
+@keyframes brillo-final {
+  0%,
+  100% {
+    box-shadow: 0 0 12px 2px rgba(226, 9, 26, 0.5), 0 0 24px 4px rgba(226, 9, 26, 0.25);
+  }
+  50% {
+    box-shadow: 0 0 20px 4px rgba(226, 9, 26, 0.8), 0 0 40px 8px rgba(226, 9, 26, 0.4);
+  }
+}
+
+.animate-brillo-final {
+  animation: brillo-final 1.8s ease-in-out infinite;
+}
+
+@keyframes ganador-entrada {
+  from {
+    opacity: 0;
+    transform: scale(0.7);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes brillo-pulsante {
+  0%,
+  100% {
+    text-shadow: 0 0 20px rgba(255, 255, 255, 0.7), 0 0 40px rgba(255, 255, 255, 0.35);
+  }
+  50% {
+    text-shadow: 0 0 35px rgba(255, 255, 255, 1), 0 0 60px rgba(255, 255, 255, 0.55);
+  }
+}
+
+@keyframes brillo-dorado {
+  0%,
+  100% {
+    text-shadow: 0 0 24px rgba(255, 200, 0, 0.7), 0 0 46px rgba(255, 150, 0, 0.4);
+  }
+  50% {
+    text-shadow: 0 0 42px rgba(255, 220, 40, 1), 0 0 75px rgba(255, 160, 0, 0.6);
+  }
+}
+
+.animate-ganador {
+  animation:
+    ganador-entrada 0.5s ease-out,
+    brillo-pulsante 1.6s ease-in-out infinite 0.5s;
+}
+
+.animate-campeon {
+  animation:
+    ganador-entrada 0.6s cubic-bezier(0.34, 1.56, 0.64, 1),
+    brillo-dorado 1.4s ease-in-out infinite 0.6s;
+}
+
+/* Pantalla de anuncio "VS": marcos neón azul/rojo con chispas de fondo, ver
+   SecuenciaBatalla.tsx (fase "anuncio_vs"). */
+@keyframes ascua-flota {
+  0% {
+    transform: translateY(0) scale(0.6);
+    opacity: 0;
+  }
+  15% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(-46px) scale(1);
+    opacity: 0;
+  }
+}
+
+.animate-ascua {
+  animation: ascua-flota 2.6s ease-in-out infinite;
+}
+
+@keyframes neon-pulso {
+  0%,
+  100% {
+    opacity: 0.85;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.animate-neon-pulso {
+  animation: neon-pulso 1.8s ease-in-out infinite;
+}
+
+@keyframes vs-destello {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.6;
+  }
+  50% {
+    transform: scale(1.35);
+    opacity: 1;
+  }
+}
+
+.animate-vs-destello {
+  animation: vs-destello 1.3s ease-in-out infinite;
+}
+
+/* Fondo con degradado de color detrás de cada mitad de la pantalla de "VS"
+   (no solo el marco neón), para que se vea más terminado. El centro del
+   degradado se recarga hacia el lado interior (cerca del centro) para que
+   ambos colores se noten converger hacia el "VS", igual que el marco. Cada
+   una ocupa la pantalla COMPLETA (no solo su mitad) y se recorta en diagonal
+   con clip-path, para que la línea donde se juntan azul y rojo no sea recta.
+   Los porcentajes del degradado están calculados sobre el ancho total. */
+.fondo-vs-azul {
+  clip-path: polygon(0% 0%, 58% 0%, 42% 100%, 0% 100%);
+  background: radial-gradient(
+    circle at 36% 50%,
+    color-mix(in srgb, var(--color-boss-blue) 45%, transparent) 0%,
+    color-mix(in srgb, var(--color-boss-blue) 16%, transparent) 45%,
+    transparent 78%
+  );
+}
+
+.fondo-vs-rojo {
+  clip-path: polygon(58% 0%, 100% 0%, 100% 100%, 42% 100%);
+  background: radial-gradient(
+    circle at 64% 50%,
+    color-mix(in srgb, var(--color-boss-red) 45%, transparent) 0%,
+    color-mix(in srgb, var(--color-boss-red) 16%, transparent) 45%,
+    transparent 78%
+  );
+}
+
+/* Pantalla de "le toca a..." / turno: la pantalla completa se ilumina del
+   color del competidor en turno (azul = A, rojo = B), con su foto en grande.
+   A diferencia del fondo del VS, aquí es un solo color centrado en toda la
+   pantalla (no una diagonal partida entre dos). */
+.fondo-reflector-azul {
+  background: radial-gradient(
+    circle at 50% 42%,
+    color-mix(in srgb, var(--color-boss-blue) 55%, transparent) 0%,
+    color-mix(in srgb, var(--color-boss-blue) 22%, transparent) 42%,
+    transparent 80%
+  );
+}
+
+.fondo-reflector-rojo {
+  background: radial-gradient(
+    circle at 50% 42%,
+    color-mix(in srgb, var(--color-boss-red) 55%, transparent) 0%,
+    color-mix(in srgb, var(--color-boss-red) 22%, transparent) 42%,
+    transparent 80%
+  );
+}
+
+/* Transición del corte del VS a la pantalla del competidor en turno: un
+   destello breve (como flash de cámara) en vez de un corte seco. */
+@keyframes reflector-flash {
+  0% {
+    opacity: 0;
+    filter: brightness(2.4) saturate(1.3);
+    transform: scale(1.08);
+  }
+  35% {
+    opacity: 1;
+    filter: brightness(1.5) saturate(1.15);
+  }
+  100% {
+    opacity: 1;
+    filter: brightness(1) saturate(1);
+    transform: scale(1);
+  }
+}
+
+.animate-reflector-entrada {
+  animation: reflector-flash 0.5s ease-out;
+}
+
+/* Pantalla del ganador: a diferencia de fondo-reflector-* (que se desvanece
+   a transparente hacia los bordes), este se mantiene sólido de esquina a
+   esquina — "el color del ganador cubre toda la pantalla" — con una viñeta
+   oscura sutil en las orillas para que no se vea plano. */
+.fondo-ganador-azul {
+  background: radial-gradient(
+    circle at 50% 40%,
+    color-mix(in srgb, var(--color-boss-blue) 75%, transparent) 0%,
+    color-mix(in srgb, var(--color-boss-blue) 32%, transparent) 45%,
+    transparent 85%
+  );
+}
+
+.fondo-ganador-rojo {
+  background: radial-gradient(
+    circle at 50% 40%,
+    color-mix(in srgb, var(--color-boss-red) 75%, transparent) 0%,
+    color-mix(in srgb, var(--color-boss-red) 32%, transparent) 45%,
+    transparent 85%
+  );
+}
+
+/* Texto que "respira" (Calificando...) sin ser una entrada de una sola vez
+   como impacto-entrada — el color lo pone quien lo usa (azul/rojo del lado
+   correspondiente), esto solo anima opacidad y escala. */
+@keyframes pulso-suave {
+  0%,
+  100% {
+    opacity: 0.75;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.05);
+  }
+}
+
+.animate-pulso-suave {
+  animation: pulso-suave 1.4s ease-in-out infinite;
+}
+
+/* Fondo del tablero de "próximas batallas" (pantalla secundaria): dos manchas
+   de color grandes y difuminadas que se desplazan muy lento, como una aurora,
+   en vez de un patrón estático — le da vida al negro plano sin distraer del
+   contenido encima. */
+@keyframes deriva-mancha-a {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(6%, 8%) scale(1.15);
+  }
+}
+
+@keyframes deriva-mancha-b {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1.1);
+  }
+  50% {
+    transform: translate(-8%, -6%) scale(1);
+  }
+}
+
+.animate-deriva-a {
+  animation: deriva-mancha-a 14s ease-in-out infinite;
+}
+
+.animate-deriva-b {
+  animation: deriva-mancha-b 17s ease-in-out infinite;
 }

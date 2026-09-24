@@ -73,6 +73,17 @@ export type Categoria =
 
 export type Sexo = "MASCULINO" | "FEMENINO";
 
+// Estado del QR de acceso. Debe coincidir exactamente con backend/src/config/catalog.ts
+export type EstadoAcceso = "NO_USADO" | "DENTRO" | "FUERA_TEMPORAL" | "REINGRESO" | "BLOQUEADO";
+
+export const ESTADO_ACCESO_LABEL: Record<EstadoAcceso, string> = {
+    NO_USADO: "No usado",
+    DENTRO: "Dentro",
+    FUERA_TEMPORAL: "Fuera temporal",
+    REINGRESO: "Dentro (reingresó)",
+    BLOQUEADO: "Bloqueado",
+};
+
 export type PaqueteBase =
     | "COMPETIDOR"
     | "PUBLICO_GENERAL"

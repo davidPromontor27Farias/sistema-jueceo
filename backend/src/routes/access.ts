@@ -2,8 +2,8 @@ import { Router } from "express";
 import { prisma } from "../lib/prisma";
 import { accessVerifyLimiter } from "../lib/rateLimit";
 import { requireRole } from "../middleware/requireAuth";
-import { CATEGORIAS_LABEL, PAQUETES_BASE_LABEL } from "../config/catalog";
-import type { Registration } from "../generated/prisma/client";
+import { CATEGORIAS_LABEL, ESTADO_ACCESO_LABEL, PAQUETES_BASE_LABEL } from "../config/catalog";
+import type { EstadoAcceso, Registration, TipoEventoAcceso } from "../generated/prisma/client";
 
 export const accessRouter = Router();
 
@@ -22,6 +22,7 @@ const CAMPOS_STAFF = {
     fotoUrl: true,
     estatusPago: true,
     qrEscaneadoEn: true,
+    estadoAcceso: true,
     paqueteBase: true,
     academiaCrew: true,
     workshopsSeleccionados: true,
@@ -41,6 +42,8 @@ function aItemStaff(registro: RegistroStaff) {
         competidorId: registro.competidorId,
         fotoUrl: registro.fotoUrl,
         qrEscaneadoEn: registro.qrEscaneadoEn,
+        estadoAcceso: registro.estadoAcceso,
+        estadoAccesoLabel: ESTADO_ACCESO_LABEL[registro.estadoAcceso],
         // El enum de Prisma conserva PRUEBA_PAGO (deprecado, ver schema.prisma)
         // por registros de prueba viejos; no tiene label en el catálogo actual.
         paqueteBaseLabel:
@@ -50,6 +53,28 @@ function aItemStaff(registro: RegistroStaff) {
         agregarOpenStyle: registro.agregarOpenStyle,
     };
 }
+
+// Debajo de esta ventana, un nuevo evento del mismo QR se marca como posible
+// duplicado (ej. QR clonado/compartido usado en dos puntos de acceso casi al
+// mismo tiempo) pero NO se bloquea: el staff decide a criterio, solo se
+// avisa fuerte en pantalla y queda registrado para poder investigarlo después.
+const VENTANA_DUPLICADO_MS = 2 * 60 * 1000;
+
+// Transición automática según el estado actual: un solo botón de "escanear"
+// alterna entre entrar/salir sin que el staff tenga que elegir la acción.
+const SIGUIENTE_ESTADO: Record<Exclude<EstadoAcceso, "BLOQUEADO">, EstadoAcceso> = {
+    NO_USADO: "DENTRO",
+    DENTRO: "FUERA_TEMPORAL",
+    FUERA_TEMPORAL: "REINGRESO",
+    REINGRESO: "FUERA_TEMPORAL",
+};
+
+const TIPO_EVENTO_POR_ESTADO_ANTERIOR: Record<Exclude<EstadoAcceso, "BLOQUEADO">, TipoEventoAcceso> = {
+    NO_USADO: "ENTRADA",
+    DENTRO: "SALIDA_TEMPORAL",
+    FUERA_TEMPORAL: "REINGRESO",
+    REINGRESO: "SALIDA_TEMPORAL",
+};
 
 accessRouter.post("/verify", accessVerifyLimiter, requireRole("STAFF_ACCESO", "SUPER_ADMIN"), async (req, res) => {
     const qrToken = typeof req.body?.qrToken === "string" ? req.body.qrToken.trim() : "";
@@ -66,37 +91,143 @@ accessRouter.post("/verify", accessVerifyLimiter, requireRole("STAFF_ACCESO", "S
         return res.status(404).json({ ok: false, motivo: "QR_INVALIDO" });
     }
 
-    if (registration.qrEscaneadoEn) {
-        return res.status(409).json({
-            ok: false,
-            motivo: "YA_USADO",
-            escaneadoEn: registration.qrEscaneadoEn,
-            ...aItemStaff(registration),
+    if (registration.estadoAcceso === "BLOQUEADO") {
+        await prisma.accesoEvento.create({
+            data: {
+                registrationId: registration.id,
+                tipo: "INTENTO_BLOQUEADO",
+                estadoAnterior: "BLOQUEADO",
+                estadoNuevo: "BLOQUEADO",
+                staffId: req.admin?.id ?? null,
+            },
         });
+        return res.status(409).json({ ok: false, motivo: "BLOQUEADO", ...aItemStaff(registration) });
     }
 
+    const estadoAnterior = registration.estadoAcceso;
+    const estadoNuevo = SIGUIENTE_ESTADO[estadoAnterior];
+    const tipoEvento = TIPO_EVENTO_POR_ESTADO_ANTERIOR[estadoAnterior];
+
+    const ultimoEvento = await prisma.accesoEvento.findFirst({
+        where: { registrationId: registration.id },
+        orderBy: { createdAt: "desc" },
+        select: { createdAt: true },
+    });
+    const ahora = new Date();
+    const segundosDesdeUltimoEvento = ultimoEvento
+        ? Math.round((ahora.getTime() - ultimoEvento.createdAt.getTime()) / 1000)
+        : null;
+    const posibleDuplicado = ultimoEvento !== null && ahora.getTime() - ultimoEvento.createdAt.getTime() < VENTANA_DUPLICADO_MS;
+
+    // Concurrencia: solo aplica el cambio si el estado no cambió entre el
+    // findUnique y este update (dos escaneos casi simultáneos del mismo QR).
     const actualizado = await prisma.registration.updateMany({
-        where: { id: registration.id, qrEscaneadoEn: null },
-        data: { qrEscaneadoEn: new Date() },
+        where: { id: registration.id, estadoAcceso: estadoAnterior },
+        data: {
+            estadoAcceso: estadoNuevo,
+            qrEscaneadoEn: registration.qrEscaneadoEn ?? ahora,
+        },
     });
 
     if (actualizado.count === 0) {
-        return res.status(409).json({ ok: false, motivo: "YA_USADO" });
+        return res.status(409).json({ ok: false, motivo: "CONFLICTO", ...aItemStaff(registration) });
     }
 
-    return res.json({ ok: true, ...aItemStaff(registration) });
+    await prisma.accesoEvento.create({
+        data: {
+            registrationId: registration.id,
+            tipo: tipoEvento,
+            estadoAnterior,
+            estadoNuevo,
+            posibleDuplicado,
+            segundosDesdeUltimoEvento,
+            staffId: req.admin?.id ?? null,
+        },
+    });
+
+    return res.json({
+        ok: true,
+        tipoEvento,
+        posibleDuplicado,
+        segundosDesdeUltimoEvento,
+        ...aItemStaff({ ...registration, estadoAcceso: estadoNuevo }),
+    });
 });
 
-// Historial de check-ins: reutiliza qrEscaneadoEn (ya es el timestamp de uso
-// del QR, de un solo uso) en vez de una tabla aparte. Compartido entre todos
-// los dispositivos/staff que estén escaneando en la entrada. Solo staff: trae
-// el detalle completo del paquete/academia para que el admin vea quién va
-// entrando sin tener que escanear él mismo.
+// Bloquea o desbloquea un QR a mano desde la misma pantalla de escaneo (ej.
+// reporte de fraude o mal comportamiento en el evento). Al desbloquear se
+// restaura el estado que tenía justo antes del bloqueo (buscándolo en el
+// log de AccesoEvento), no siempre "no usado".
+accessRouter.post("/bloquear", requireRole("STAFF_ACCESO", "SUPER_ADMIN"), async (req, res) => {
+    const qrToken = typeof req.body?.qrToken === "string" ? req.body.qrToken.trim() : "";
+    const bloquear = req.body?.bloquear === true;
+    if (!qrToken) {
+        return res.status(400).json({ error: "Falta qrToken" });
+    }
+
+    const registration = await prisma.registration.findUnique({ where: { qrToken }, select: CAMPOS_STAFF });
+    if (!registration) {
+        return res.status(404).json({ error: "QR no encontrado" });
+    }
+
+    if (bloquear) {
+        if (registration.estadoAcceso === "BLOQUEADO") {
+            return res.status(409).json({ error: "Ese QR ya está bloqueado" });
+        }
+
+        await prisma.$transaction([
+            prisma.registration.update({ where: { id: registration.id }, data: { estadoAcceso: "BLOQUEADO" } }),
+            prisma.accesoEvento.create({
+                data: {
+                    registrationId: registration.id,
+                    tipo: "BLOQUEO",
+                    estadoAnterior: registration.estadoAcceso,
+                    estadoNuevo: "BLOQUEADO",
+                    staffId: req.admin?.id ?? null,
+                },
+            }),
+        ]);
+
+        return res.json({ ok: true, ...aItemStaff({ ...registration, estadoAcceso: "BLOQUEADO" }) });
+    }
+
+    if (registration.estadoAcceso !== "BLOQUEADO") {
+        return res.status(409).json({ error: "Ese QR no está bloqueado" });
+    }
+
+    const ultimoBloqueo = await prisma.accesoEvento.findFirst({
+        where: { registrationId: registration.id, tipo: "BLOQUEO" },
+        orderBy: { createdAt: "desc" },
+        select: { estadoAnterior: true },
+    });
+    const estadoRestaurado: EstadoAcceso = ultimoBloqueo?.estadoAnterior ?? "NO_USADO";
+
+    await prisma.$transaction([
+        prisma.registration.update({ where: { id: registration.id }, data: { estadoAcceso: estadoRestaurado } }),
+        prisma.accesoEvento.create({
+            data: {
+                registrationId: registration.id,
+                tipo: "DESBLOQUEO",
+                estadoAnterior: "BLOQUEADO",
+                estadoNuevo: estadoRestaurado,
+                staffId: req.admin?.id ?? null,
+            },
+        }),
+    ]);
+
+    return res.json({ ok: true, ...aItemStaff({ ...registration, estadoAcceso: estadoRestaurado }) });
+});
+
+// Historial de check-ins: quiénes tienen actividad de acceso (ya entraron,
+// salieron a comer, reingresaron o están bloqueados), ordenado por el
+// movimiento más reciente. Compartido entre todos los dispositivos/staff que
+// estén escaneando en la entrada. Solo staff: trae el detalle completo del
+// paquete/academia para que el admin vea quién va entrando sin escanear él mismo.
 accessRouter.get("/historial", requireRole("STAFF_ACCESO", "SUPER_ADMIN"), async (_req, res) => {
     const registros = await prisma.registration.findMany({
-        where: { qrEscaneadoEn: { not: null } },
+        where: { estadoAcceso: { not: "NO_USADO" } },
         select: CAMPOS_STAFF,
-        orderBy: { qrEscaneadoEn: "desc" },
+        orderBy: { updatedAt: "desc" },
         take: 50,
     });
 
