@@ -167,6 +167,14 @@ model EstadoCategoria {
   turnoPreseleccionActualId   String?
   turnoPreseleccionActual     Registration? @relation(fields: [turnoPreseleccionActualId], references: [id])
   turnoPreseleccionIniciadoEn DateTime?
+  // Momento en que el turno actual quedó completo (todos los jueces activos
+  // ya calificaron), para poder avanzar solo al siguiente sin depender de un
+  // setTimeout en memoria del proceso — si el servidor se reinicia justo en
+  // esa ventana de espera (ej. hot-reload en dev), el avance normal se
+  // pierde; con esto, cualquier siguiente consulta de turno-actual detecta
+  // que ya se cumplió el tiempo y avanza sola (ver turnoActualDeCategoria en
+  // backend/src/routes/competencia.ts).
+  turnoPreseleccionCompletadoEn DateTime?
 
   @@map("estado_categorias")
 }

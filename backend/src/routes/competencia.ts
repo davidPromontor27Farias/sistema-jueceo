@@ -331,7 +331,7 @@ competenciaRouter.patch(
         // automático pendiente (ver turnoActualDeCategoria / avanzarTurnoPreseleccion).
         const limpiarTurno =
             parsed.data.estatus !== "PRESELECCION"
-                ? { turnoPreseleccionActualId: null, turnoPreseleccionIniciadoEn: null }
+                ? { turnoPreseleccionActualId: null, turnoPreseleccionIniciadoEn: null, turnoPreseleccionCompletadoEn: null }
                 : {};
         if (parsed.data.estatus !== "PRESELECCION") {
             cancelarAvanceAutomatico(categoria);
@@ -467,10 +467,21 @@ competenciaRouter.post("/preseleccion/:registrationId/calificar", requireRole("J
     // DURACION_RESULTADOS_PRESELECCION_MS mostrando nombre+puntaje+desglose
     // antes de pasar solo (ver avanzarTurnoPreseleccion). El `esperado` evita
     // saltarse a alguien si el staff ya avanzó a mano mientras tanto.
+    //
+    // turnoPreseleccionCompletadoEn se guarda en la base (no solo en el
+    // setTimeout en memoria) para que turnoActualDeCategoria pueda
+    // autocurarse si el proceso se reinicia en esa ventana de espera (ej.
+    // hot-reload de ts-node-dev en desarrollo) y el timer se pierde — sin
+    // esto la categoría se queda pegada en un turno ya calificado para
+    // siempre, sin avanzar al que realmente falta.
     if (estado.turnoPreseleccionActualId === registrationId) {
         const { calificacionesRecibidas } = await puntajePreseleccion(registrationId);
         const juecesActivos = await prisma.adminUser.count({ where: { rol: "JUEZ", activo: true } });
         if (juecesActivos > 0 && calificacionesRecibidas >= juecesActivos) {
+            await prisma.estadoCategoria.update({
+                where: { categoria: registro.categoria },
+                data: { turnoPreseleccionCompletadoEn: new Date() },
+            });
             cancelarAvanceAutomatico(registro.categoria);
             const timer = setTimeout(() => {
                 avanzarTurnoPreseleccion(registro.categoria, registrationId).catch((error) => console.error(error));
@@ -509,18 +520,65 @@ async function puntajePreseleccion(
     return { calificacionesRecibidas: agg._count.id, puntajeTotal, desglose };
 }
 
+// Anotado a mano (en vez de inferido) porque turnoActualDeCategoria y
+// avanzarTurnoPreseleccion se llaman mutuamente (autocuración, ver abajo) —
+// sin el tipo explícito, TS no puede inferir el tipo de retorno de ninguna
+// de las dos.
+interface TurnoPreseleccionActual {
+    participante: {
+        id: string;
+        nombreArtistico: string;
+        nombres: string;
+        apellidos: string;
+        competidorId: string | null;
+        fotoUrl: string | null;
+    };
+    categoria: Categoria;
+    iniciadoEn: Date;
+    calificacionesRecibidas: number;
+    juecesActivos: number;
+    completo: boolean;
+    puntajeTotal: number | null;
+    desglose: DesglosePuntaje | null;
+}
+
 // Quién está en tarima ahora mismo en la fase de Preselección de una
 // categoría, con su avance de calificación — para /pantalla (overlay con
 // cronómetro + resultado, ver frontend/src/app/pantalla/SecuenciaPreseleccion.tsx)
 // y admin/jueceo (a quién calificar). Lo usan el GET público y las rutas de
 // abajo.
-async function turnoActualDeCategoria(categoria: Categoria) {
-    const estado = await prisma.estadoCategoria.findUnique({
+async function turnoActualDeCategoria(categoria: Categoria): Promise<TurnoPreseleccionActual | null> {
+    let estado = await prisma.estadoCategoria.findUnique({
         where: { categoria },
         include: { turnoPreseleccionActual: COMPETIDOR_SELECT },
     });
     if (!estado?.turnoPreseleccionActual || !estado.turnoPreseleccionIniciadoEn) {
         return null;
+    }
+
+    // Autocuración: si este turno ya se completó hace rato pero nadie
+    // avanzó a tiempo (el setTimeout en memoria se perdió, ej. el proceso se
+    // reinició en esa ventana), cualquier consulta de turno-actual lo
+    // detecta acá y avanza sola — /pantalla, admin/jueceo y el panel de
+    // competencia hacen poll cada 3-4s, así que se autocorrige solo en unos
+    // segundos sin que el staff tenga que intervenir a mano.
+    if (
+        estado.turnoPreseleccionCompletadoEn &&
+        Date.now() - estado.turnoPreseleccionCompletadoEn.getTime() >= DURACION_RESULTADOS_PRESELECCION_MS
+    ) {
+        const avance = await avanzarTurnoPreseleccion(categoria, estado.turnoPreseleccionActualId ?? undefined);
+        if (!("error" in avance)) {
+            return avance.turno;
+        }
+        // Alguien más ya avanzó mientras tanto (ej. otro poll ganó la
+        // carrera, o el staff avanzó a mano) — se relee el estado actual.
+        estado = await prisma.estadoCategoria.findUnique({
+            where: { categoria },
+            include: { turnoPreseleccionActual: COMPETIDOR_SELECT },
+        });
+        if (!estado?.turnoPreseleccionActual || !estado.turnoPreseleccionIniciadoEn) {
+            return null;
+        }
     }
 
     const [juecesActivos, { calificacionesRecibidas, puntajeTotal, desglose }] = await Promise.all([
@@ -550,6 +608,61 @@ competenciaRouter.get("/categorias/:categoria/preseleccion/turno-actual", async 
 
     const turno = await turnoActualDeCategoria(categoria);
     return res.json({ turno });
+});
+
+// Público: ranking completo (todos los pagados, aunque no hayan sido
+// calificados todavía) de la fase de Preselección. Lo consume /pantalla para
+// el recorrido de resultados uno por uno, mejor puntaje primero, una vez que
+// se acabó la fila de turnos (ver useRecapPreseleccion en
+// frontend/src/app/pantalla/SecuenciaPreseleccion.tsx). Mismo cálculo de
+// puntaje que generar-top-bracket, pero sin cortar ni exigir que esté
+// completo — acá "completo" es solo un dato más por fila.
+competenciaRouter.get("/categorias/:categoria/preseleccion/resultados", async (req, res) => {
+    const categoria = req.params.categoria as Categoria;
+    if (!TODAS_LAS_CATEGORIAS.includes(categoria)) {
+        return res.status(404).json({ error: "Categoría desconocida" });
+    }
+
+    const participantes = await prisma.registration.findMany({
+        where: { categoria, estatusPago: "PAGADO" },
+        select: { id: true, nombreArtistico: true, nombres: true, apellidos: true, competidorId: true, fotoUrl: true },
+    });
+    const ids = participantes.map((p) => p.id);
+    const juecesActivos = await prisma.adminUser.count({ where: { rol: "JUEZ", activo: true } });
+    const sumas = await prisma.puntuacionPreseleccion.groupBy({
+        by: ["registrationId"],
+        where: { registrationId: { in: ids } },
+        _count: { id: true },
+        _sum: { tecnica: true, ejecucion: true, vocabulario: true, musicalidad: true, originalidad: true },
+    });
+    const sumaPorId = new Map(sumas.map((s) => [s.registrationId, s]));
+
+    const resultados = participantes
+        .map((p) => {
+            const s = sumaPorId.get(p.id);
+            const calificacionesRecibidas = s?._count.id ?? 0;
+            const puntajeTotal = s
+                ? (s._sum.tecnica ?? 0) +
+                  (s._sum.ejecucion ?? 0) +
+                  (s._sum.vocabulario ?? 0) +
+                  (s._sum.musicalidad ?? 0) +
+                  (s._sum.originalidad ?? 0)
+                : null;
+            return {
+                id: p.id,
+                nombreArtistico: p.nombreArtistico,
+                nombres: p.nombres,
+                apellidos: p.apellidos,
+                competidorId: p.competidorId,
+                fotoUrl: p.fotoUrl,
+                calificacionesRecibidas,
+                puntajeTotal,
+                completo: juecesActivos > 0 && calificacionesRecibidas >= juecesActivos,
+            };
+        })
+        .sort((a, b) => (b.puntajeTotal ?? -1) - (a.puntajeTotal ?? -1));
+
+    return res.json({ resultados, juecesActivos });
 });
 
 // Cuánto se queda /pantalla mostrando nombre+categoría+puntaje+desglose de un
@@ -587,7 +700,7 @@ function cancelarAvanceAutomatico(categoria: Categoria) {
 async function avanzarTurnoPreseleccion(
     categoria: Categoria,
     esperado?: string,
-): Promise<{ turno: Awaited<ReturnType<typeof turnoActualDeCategoria>>; terminado: boolean } | { error: string }> {
+): Promise<{ turno: TurnoPreseleccionActual | null; terminado: boolean } | { error: string }> {
     const estado = await prisma.estadoCategoria.findUnique({ where: { categoria } });
     if (estado?.estatus !== "PRESELECCION") {
         return { error: "Esta categoría no está en fase de preselección" };
@@ -605,22 +718,45 @@ async function avanzarTurnoPreseleccion(
         return { error: "No hay competidores con pago confirmado en esta categoría" };
     }
 
+    const juecesActivos = await prisma.adminUser.count({ where: { rol: "JUEZ", activo: true } });
+    const puntuaciones = await prisma.puntuacionPreseleccion.groupBy({
+        by: ["registrationId"],
+        where: { registrationId: { in: participantes.map((p) => p.id) } },
+        _count: { id: true },
+    });
+    const conteoPorId = new Map(puntuaciones.map((p) => [p.registrationId, p._count.id]));
+
     const idxActual = estado.turnoPreseleccionActualId
         ? participantes.findIndex((p) => p.id === estado.turnoPreseleccionActualId)
         : -1;
-    const siguienteIdx = idxActual + 1;
 
-    if (siguienteIdx >= participantes.length) {
+    // Busca el siguiente SIN calificación completa a partir de la posición
+    // actual — no solo "el que sigue en la lista" — para que "Siguiente"
+    // nunca reaparezca a alguien que ya calificaron todos los jueces. Esto
+    // también evita que, una vez que la fila ya se acabó
+    // (turnoPreseleccionActualId en null, idxActual = -1), un click de más
+    // en "Siguiente" reinicie la fila desde el principio: si ya no queda
+    // nadie sin calificar, simplemente no encuentra a nadie y se queda
+    // terminado.
+    const siguiente = participantes
+        .slice(idxActual + 1)
+        .find((p) => (conteoPorId.get(p.id) ?? 0) < juecesActivos);
+
+    if (!siguiente) {
         await prisma.estadoCategoria.update({
             where: { categoria },
-            data: { turnoPreseleccionActualId: null, turnoPreseleccionIniciadoEn: null },
+            data: { turnoPreseleccionActualId: null, turnoPreseleccionIniciadoEn: null, turnoPreseleccionCompletadoEn: null },
         });
         return { turno: null, terminado: true };
     }
 
     await prisma.estadoCategoria.update({
         where: { categoria },
-        data: { turnoPreseleccionActualId: participantes[siguienteIdx]!.id, turnoPreseleccionIniciadoEn: new Date() },
+        data: {
+            turnoPreseleccionActualId: siguiente.id,
+            turnoPreseleccionIniciadoEn: new Date(),
+            turnoPreseleccionCompletadoEn: null,
+        },
     });
 
     return { turno: await turnoActualDeCategoria(categoria), terminado: false };
@@ -848,6 +984,7 @@ competenciaRouter.post(
                 totalRondas,
                 turnoPreseleccionActualId: null,
                 turnoPreseleccionIniciadoEn: null,
+                turnoPreseleccionCompletadoEn: null,
             },
         });
 

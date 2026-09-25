@@ -6,13 +6,20 @@ import { CATEGORIAS } from "@/config/catalog";
 import {
     getEnfrentamientos,
     getPantallaEstado,
+    getResultadosPreseleccion,
     getTurnoPreseleccionActual,
     type Enfrentamiento,
     type PantallaEstado,
+    type ResultadoPreseleccionItem,
     type TurnoPreseleccion,
 } from "@/lib/adminApi";
 import { SecuenciaOverlay, useSecuenciaBatalla } from "./SecuenciaBatalla";
-import { SecuenciaPreseleccionOverlay, useSecuenciaPreseleccion } from "./SecuenciaPreseleccion";
+import {
+    RecapPreseleccionOverlay,
+    SecuenciaPreseleccionOverlay,
+    useRecapPreseleccion,
+    useSecuenciaPreseleccion,
+} from "./SecuenciaPreseleccion";
 import { BracketMirror } from "./BracketMirror";
 
 const INTERVALO_MS = 3000;
@@ -27,6 +34,7 @@ export default function PantallaPublicaPage() {
     const [enfrentamientos, setEnfrentamientos] = useState<Enfrentamiento[]>([]);
     const [todosLosEnfrentamientos, setTodosLosEnfrentamientos] = useState<Enfrentamiento[]>([]);
     const [turnoPreseleccion, setTurnoPreseleccion] = useState<TurnoPreseleccion>(null);
+    const [resultadosPreseleccion, setResultadosPreseleccion] = useState<ResultadoPreseleccionItem[]>([]);
 
     useEffect(() => {
         let cancelado = false;
@@ -87,6 +95,28 @@ export default function PantallaPublicaPage() {
         };
     }, [estado?.categoriaEnfocada]);
 
+    // Ranking completo de Preselección (para el recorrido de resultados una
+    // vez que se acaba la fila de turnos, ver useRecapPreseleccion) — mismo
+    // criterio que el poll de turno-actual: corre sin importar la vista.
+    useEffect(() => {
+        if (!estado?.categoriaEnfocada) {
+            return;
+        }
+
+        const categoria = estado.categoriaEnfocada;
+        let cancelado = false;
+        const poll = async () => {
+            const resultado = await getResultadosPreseleccion(categoria);
+            if (!cancelado && resultado.ok) setResultadosPreseleccion(resultado.data.resultados);
+        };
+        poll();
+        const id = setInterval(poll, INTERVALO_MS);
+        return () => {
+            cancelado = true;
+            clearInterval(id);
+        };
+    }, [estado?.categoriaEnfocada]);
+
     // Vista de Ganadores: un campeón por categoría en todo el evento, no solo
     // de la categoría enfocada, así que se sondea aparte y sin filtro.
     useEffect(() => {
@@ -109,6 +139,11 @@ export default function PantallaPublicaPage() {
 
     const secuencia = useSecuenciaBatalla(enfrentamientos);
     const secuenciaPreseleccion = useSecuenciaPreseleccion(turnoPreseleccion);
+    const recapPreseleccion = useRecapPreseleccion(
+        estado?.categoriaEnfocada ?? null,
+        turnoPreseleccion,
+        resultadosPreseleccion,
+    );
 
     // En la práctica nunca se solapan (una categoría está en un solo estatus
     // a la vez: PRESELECCION o EN_CURSO), pero por robustez la secuencia de
@@ -132,6 +167,10 @@ export default function PantallaPublicaPage() {
                 segundosRestantes={secuenciaPreseleccion.segundosRestantes}
             />
         );
+    }
+
+    if (recapPreseleccion.activo && estado?.categoriaEnfocada) {
+        return <RecapPreseleccionOverlay estado={recapPreseleccion} categoria={estado.categoriaEnfocada} />;
     }
 
     if (!estado || estado.vista === "APAGADA") {

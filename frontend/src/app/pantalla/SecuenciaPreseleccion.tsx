@@ -1,13 +1,18 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import type { Categoria } from "@/config/catalog";
 import { CATEGORIAS } from "@/config/catalog";
-import type { TurnoPreseleccion } from "@/lib/adminApi";
+import type { ResultadoPreseleccionItem, TurnoPreseleccion } from "@/lib/adminApi";
 import { ChispasFondo, DesgloseCompetidor, DURACION_TURNO_MS, FotoCompetidorVs } from "./SecuenciaBatalla";
 
 // "Le toca a..." antes de arrancar el conteo de un turno de Preselección —
 // distinto del DURACION_PRESENTACION_MS de las batallas 1v1 (8s), acá son 7s.
 const DURACION_PRESENTACION_PRESELECCION_MS = 7_000;
+
+// Cuánto se muestra cada participante en el recorrido de resultados (ver
+// useRecapPreseleccion) una vez que se acabó la fila de turnos.
+const DURACION_RECAP_POR_PARTICIPANTE_MS = 3_000;
 
 type FaseSecuenciaPreseleccion = "normal" | "presentando" | "turno" | "calificando" | "resultados";
 
@@ -199,6 +204,98 @@ export function SecuenciaPreseleccionOverlay({ fase, turno, segundosRestantes }:
                     </div>
                 </div>
             )}
+        </main>
+    );
+}
+
+export type EstadoRecapPreseleccion = {
+    activo: boolean;
+    participante: ResultadoPreseleccionItem | null;
+    posicion: number;
+    total: number;
+};
+
+// Una vez que se acaba la fila de turnos (turno === null) y todos los
+// participantes quedaron calificados, recorre el ranking completo (mejor a
+// peor puntaje) uno por uno antes de volver a la pantalla normal — así el
+// público ve a todos los que pasaron antes de que el admin muestre el
+// bracket. `mostradosRef` evita que se repita en cada poll mientras la
+// categoría se queda en ese estado (puede ser mucho rato, hasta que el admin
+// genere el Top Bracket).
+export function useRecapPreseleccion(
+    categoria: Categoria | null,
+    turno: TurnoPreseleccion,
+    resultados: ResultadoPreseleccionItem[],
+): EstadoRecapPreseleccion {
+    const [indice, setIndice] = useState<number | null>(null);
+    const mostradosRef = useRef<Set<Categoria>>(new Set());
+    const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    const listos = resultados.length > 0 && resultados.every((r) => r.completo);
+
+    useEffect(() => {
+        if (!categoria || turno || !listos) return;
+        if (mostradosRef.current.has(categoria)) return;
+        setIndice(0);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [categoria, turno, listos]);
+
+    useEffect(() => {
+        if (indice === null) return;
+        if (timeoutRef.current) clearTimeout(timeoutRef.current);
+
+        if (indice >= resultados.length) {
+            if (categoria) mostradosRef.current.add(categoria);
+            setIndice(null);
+            return;
+        }
+
+        timeoutRef.current = setTimeout(
+            () => setIndice((i) => (i === null ? null : i + 1)),
+            DURACION_RECAP_POR_PARTICIPANTE_MS,
+        );
+        return () => {
+            if (timeoutRef.current) clearTimeout(timeoutRef.current);
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [indice]);
+
+    if (indice === null || indice >= resultados.length) {
+        return { activo: false, participante: null, posicion: 0, total: resultados.length };
+    }
+    return { activo: true, participante: resultados[indice] ?? null, posicion: indice + 1, total: resultados.length };
+}
+
+export function RecapPreseleccionOverlay({
+    estado,
+    categoria,
+}: {
+    estado: EstadoRecapPreseleccion;
+    categoria: Categoria;
+}) {
+    if (!estado.activo || !estado.participante) return null;
+
+    const p = estado.participante;
+    const nombre = p.nombreArtistico || `${p.nombres} ${p.apellidos}`;
+
+    return (
+        <main className="fixed inset-0 z-50 flex flex-col items-center justify-center overflow-hidden bg-boss-black px-8 text-center">
+            <p className="absolute inset-x-0 top-10 z-10 font-display text-lg uppercase tracking-widest text-boss-gray">
+                {CATEGORIAS[categoria]} · Resultados de preselección · {estado.posicion}/{estado.total}
+            </p>
+
+            <div key={p.id} className="animate-reflector-entrada absolute inset-0">
+                <div className="fondo-vs-azul absolute inset-0" />
+                <ChispasFondo />
+
+                <div className="relative z-10 flex h-full flex-col items-center justify-center gap-4 pt-10">
+                    <FotoCompetidorVs competidor={p} grande />
+                    <p className="max-w-[85%] truncate font-display text-4xl uppercase text-white sm:text-6xl">{nombre}</p>
+                    <p className="font-display text-5xl sm:text-7xl" style={{ color: "var(--color-boss-blue)" }}>
+                        {p.puntajeTotal ?? 0} <span className="text-xl uppercase tracking-widest text-boss-gray">pts</span>
+                    </p>
+                </div>
+            </div>
         </main>
     );
 }

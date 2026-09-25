@@ -258,6 +258,27 @@ export function getTurnoPreseleccionActual(categoria: Categoria) {
     );
 }
 
+// Ranking completo de Preselección (todos los pagados, calificados o no).
+// Lo usa /pantalla para el recorrido de resultados uno por uno una vez que
+// se acaba la fila de turnos, ver frontend/src/app/pantalla/SecuenciaPreseleccion.tsx.
+export type ResultadoPreseleccionItem = {
+    id: string;
+    nombreArtistico: string;
+    nombres: string;
+    apellidos: string;
+    competidorId: string | null;
+    fotoUrl: string | null;
+    calificacionesRecibidas: number;
+    puntajeTotal: number | null;
+    completo: boolean;
+};
+
+export function getResultadosPreseleccion(categoria: Categoria) {
+    return adminFetch<{ resultados: ResultadoPreseleccionItem[]; juecesActivos: number }>(
+        `/api/competencia/categorias/${categoria}/preseleccion/resultados`,
+    );
+}
+
 export function siguienteTurnoPreseleccion(categoria: Categoria) {
     return adminFetch<{ turno: TurnoPreseleccion; terminado: boolean }>(
         `/api/competencia/categorias/${categoria}/preseleccion/siguiente-turno`,

@@ -68,16 +68,36 @@ function CompetenciaContenido() {
         }
     };
 
+    // Poll (no solo carga inicial): así el panel se autocorrige solo si el
+    // estatus de una categoría cambia "por detrás" de este componente — ej.
+    // al generar el Top Bracket desde PanelPreseleccion, que ya deja la
+    // categoría en EN_CURSO en el backend — sin esto, el admin se quedaba
+    // viendo el panel de Preselección (con el botón ya inútil, la categoría
+    // ya no acepta otro bracket) hasta refrescar la página a mano.
     useEffect(() => {
         let cancelado = false;
-        Promise.all([getCategoriasEstado(), getPantallaEstado()]).then(([resCategorias, resPantalla]) => {
+        const poll = async () => {
+            const resultado = await getCategoriasEstado();
             if (cancelado) return;
-            if (resCategorias.ok) {
-                setCategorias(resCategorias.data.categorias);
+            if (resultado.ok) {
+                setCategorias(resultado.data.categorias);
                 setError(null);
             } else {
-                setError(resCategorias.error);
+                setError(resultado.error);
             }
+        };
+        poll();
+        const id = setInterval(poll, 4000);
+        return () => {
+            cancelado = true;
+            clearInterval(id);
+        };
+    }, []);
+
+    useEffect(() => {
+        let cancelado = false;
+        getPantallaEstado().then((resPantalla) => {
+            if (cancelado) return;
             if (resPantalla.ok) {
                 setPantallaEstado(resPantalla.data.estado);
                 setCategoriaSeleccionada((actual) => actual ?? resPantalla.data.estado.categoriaEnfocada);
