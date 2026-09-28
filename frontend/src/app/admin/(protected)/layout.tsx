@@ -1,10 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { AdminSessionProvider, useAdminSession } from "../AdminSessionContext";
-import type { RolAdmin } from "@/lib/adminApi";
+import { getConfiguracionEvento, patchConfiguracionEvento, type RolAdmin } from "@/lib/adminApi";
 
 const NAV_ITEMS: { href: string; label: string; abrev: string; roles: RolAdmin[] }[] = [
     { href: "/admin", label: "Panel", abrev: "PN", roles: ["SUPER_ADMIN", "STAFF_ACCESO", "STAFF_JUECEO", "JUEZ"] },
@@ -34,6 +34,33 @@ function AdminChrome({ children }: { children: React.ReactNode }) {
     const { admin, cargando, cerrarSesion } = useAdminSession();
     const pathname = usePathname();
     const [colapsado, setColapsado] = useState(false);
+    const [modoPrueba, setModoPrueba] = useState(false);
+    const [cambiandoModo, setCambiandoModo] = useState(false);
+
+    // Franja visible para todo el staff cuando el Evento de Prueba está
+    // activo (interruptor solo para SUPER_ADMIN, ver más abajo) — así nadie
+    // olvida a mitad del ensayo que Preselección/Jueceo/Brackets/Accesos
+    // están operando sobre registros de prueba, no los reales.
+    useEffect(() => {
+        let cancelado = false;
+        const poll = async () => {
+            const resultado = await getConfiguracionEvento();
+            if (!cancelado && resultado.ok) setModoPrueba(resultado.data.modoPrueba);
+        };
+        poll();
+        const id = setInterval(poll, 10000);
+        return () => {
+            cancelado = true;
+            clearInterval(id);
+        };
+    }, []);
+
+    const alternarModoPrueba = async () => {
+        setCambiandoModo(true);
+        const resultado = await patchConfiguracionEvento(!modoPrueba);
+        setCambiandoModo(false);
+        if (resultado.ok) setModoPrueba(resultado.data.modoPrueba);
+    };
 
     if (cargando || !admin) {
         return (
@@ -46,7 +73,14 @@ function AdminChrome({ children }: { children: React.ReactNode }) {
     const itemsVisibles = NAV_ITEMS.filter((item) => item.roles.includes(admin.rol));
 
     return (
-        <div className="flex h-screen overflow-hidden bg-boss-black">
+        <div className="flex h-screen flex-col overflow-hidden bg-boss-black">
+            {modoPrueba && (
+                <div className="flex shrink-0 items-center justify-center bg-yellow-500 px-4 py-2 text-center text-xs font-bold uppercase tracking-widest text-boss-black sm:text-sm">
+                    ⚠ Modo Evento de Prueba activo — el sistema está usando registros de prueba, no los reales
+                </div>
+            )}
+
+            <div className="flex min-h-0 flex-1 overflow-hidden">
             <aside
                 className={[
                     "flex h-full shrink-0 flex-col overflow-y-auto border-r border-boss-border bg-boss-panel/60 transition-[width] duration-200",
@@ -97,6 +131,23 @@ function AdminChrome({ children }: { children: React.ReactNode }) {
                 </nav>
 
                 <div className="shrink-0 border-t border-boss-border p-3">
+                    {admin.rol === "SUPER_ADMIN" && (
+                        <button
+                            type="button"
+                            onClick={alternarModoPrueba}
+                            disabled={cambiandoModo}
+                            title={modoPrueba ? "Desactivar Evento de Prueba" : "Activar Evento de Prueba"}
+                            className={[
+                                "mb-2 w-full rounded-md border py-2 text-xs font-semibold uppercase tracking-wide transition-colors disabled:cursor-not-allowed disabled:opacity-60",
+                                colapsado ? "px-0" : "px-3",
+                                modoPrueba
+                                    ? "border-yellow-500/60 bg-yellow-500/10 text-yellow-400 hover:bg-yellow-500/20"
+                                    : "border-boss-border text-boss-gray hover:border-yellow-500/60 hover:text-yellow-400",
+                            ].join(" ")}
+                        >
+                            {colapsado ? "🧪" : cambiandoModo ? "..." : modoPrueba ? "Prueba: ON" : "Prueba: OFF"}
+                        </button>
+                    )}
                     {!colapsado && (
                         <div className="mb-2 truncate text-sm">
                             <p className="truncate font-medium text-white">{admin.nombre}</p>
@@ -120,6 +171,7 @@ function AdminChrome({ children }: { children: React.ReactNode }) {
             <main className="h-full min-w-0 flex-1 overflow-y-auto px-4 py-8 md:px-8">
                 <div className="mx-auto max-w-5xl">{children}</div>
             </main>
+            </div>
         </div>
     );
 }

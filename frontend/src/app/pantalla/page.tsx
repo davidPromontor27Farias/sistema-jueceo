@@ -21,6 +21,7 @@ import {
     useSecuenciaPreseleccion,
 } from "./SecuenciaPreseleccion";
 import { BracketMirror } from "./BracketMirror";
+import { ModoPruebaBadge } from "./ModoPruebaBadge";
 
 const INTERVALO_MS = 3000;
 
@@ -150,32 +151,44 @@ export default function PantallaPublicaPage() {
     // batalla 1v1 tiene prioridad si ambas llegaran a estar activas.
     if (secuencia.fase !== "normal") {
         return (
-            <SecuenciaOverlay
-                fase={secuencia.fase}
-                enfrentamiento={secuencia.enfrentamiento}
-                segundosRestantes={secuencia.segundosRestantes}
-                todosLosEnfrentamientos={enfrentamientos}
-            />
+            <>
+                <ModoPruebaBadge />
+                <SecuenciaOverlay
+                    fase={secuencia.fase}
+                    enfrentamiento={secuencia.enfrentamiento}
+                    segundosRestantes={secuencia.segundosRestantes}
+                    todosLosEnfrentamientos={enfrentamientos}
+                />
+            </>
         );
     }
 
     if (secuenciaPreseleccion.fase !== "normal") {
         return (
-            <SecuenciaPreseleccionOverlay
-                fase={secuenciaPreseleccion.fase}
-                turno={secuenciaPreseleccion.turno}
-                segundosRestantes={secuenciaPreseleccion.segundosRestantes}
-            />
+            <>
+                <ModoPruebaBadge />
+                <SecuenciaPreseleccionOverlay
+                    fase={secuenciaPreseleccion.fase}
+                    turno={secuenciaPreseleccion.turno}
+                    segundosRestantes={secuenciaPreseleccion.segundosRestantes}
+                />
+            </>
         );
     }
 
     if (recapPreseleccion.activo && estado?.categoriaEnfocada) {
-        return <RecapPreseleccionOverlay estado={recapPreseleccion} categoria={estado.categoriaEnfocada} />;
+        return (
+            <>
+                <ModoPruebaBadge />
+                <RecapPreseleccionOverlay estado={recapPreseleccion} categoria={estado.categoriaEnfocada} />
+            </>
+        );
     }
 
     if (!estado || estado.vista === "APAGADA") {
         return (
             <main className="flex min-h-screen items-center justify-center bg-boss-black">
+                <ModoPruebaBadge />
                 <Image src="/the-boss-logo.png" alt="THE BOSS — Breaking Battles" width={280} height={233} />
             </main>
         );
@@ -191,6 +204,7 @@ export default function PantallaPublicaPage() {
                 esVistaBrackets ? "flex h-screen flex-col overflow-hidden py-6" : "min-h-screen py-10"
             }`}
         >
+            <ModoPruebaBadge />
             {!esVistaBrackets && (
                 <Image src="/the-boss-logo.png" alt="THE BOSS — Breaking Battles" width={120} height={100} className="mx-auto" />
             )}

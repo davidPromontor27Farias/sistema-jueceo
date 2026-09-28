@@ -503,6 +503,11 @@ function PanelEnfrentamientos({ categoria }: { categoria: Categoria }) {
                                             <div className="flex flex-wrap items-center justify-between gap-2">
                                                 <p className="text-sm font-semibold uppercase tracking-wide text-boss-gray">
                                                     {ESTATUS_ENFRENTAMIENTO_LABEL[enf.estatus]}
+                                                    {enf.numeroDesempate > 0 && (
+                                                        <span className="ml-2 rounded-full bg-yellow-500/15 px-2 py-0.5 text-[11px] normal-case text-yellow-400">
+                                                            Ronda de desempate {enf.numeroDesempate}
+                                                        </span>
+                                                    )}
                                                     {progreso && (
                                                         <span className="ml-2 normal-case text-boss-gray">
                                                             · {progreso.calificacionesRecibidas} de {progreso.juecesActivos} jueces

@@ -111,6 +111,7 @@ function generarRondasFantasma(reales: Enfrentamiento[]): Enfrentamiento[] {
                 updatedAt: "",
                 turnoACortadoEn: null,
                 turnoBCortadoEn: null,
+                numeroDesempate: 0,
                 puntajeA: null,
                 puntajeB: null,
             });

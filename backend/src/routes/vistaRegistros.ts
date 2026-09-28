@@ -2,6 +2,7 @@ import { Router } from "express";
 import { prisma } from "../lib/prisma";
 import { vistaRegistrosLimiter } from "../lib/rateLimit";
 import { nombreRonda } from "../lib/brackets";
+import { modoPruebaActivo } from "../lib/modoEvento";
 import { CATEGORIAS_LABEL, type Categoria } from "../config/catalog";
 
 export const vistaRegistrosRouter = Router();
@@ -106,7 +107,11 @@ vistaRegistrosRouter.get("/", vistaRegistrosLimiter, async (req, res) => {
     }
 
     const registros = await prisma.registration.findMany({
-        where: { estatusPago: "PAGADO", categoria: { in: CATEGORIAS_COMPETENCIA } },
+        where: {
+            estatusPago: "PAGADO",
+            categoria: { in: CATEGORIAS_COMPETENCIA },
+            esPrueba: await modoPruebaActivo(),
+        },
         select: {
             id: true,
             competidorId: true,

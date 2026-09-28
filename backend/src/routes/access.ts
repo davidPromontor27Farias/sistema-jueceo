@@ -2,6 +2,7 @@ import { Router } from "express";
 import { prisma } from "../lib/prisma";
 import { accessVerifyLimiter } from "../lib/rateLimit";
 import { requireRole } from "../middleware/requireAuth";
+import { modoPruebaActivo } from "../lib/modoEvento";
 import { CATEGORIAS_LABEL, ESTADO_ACCESO_LABEL, PAQUETES_BASE_LABEL } from "../config/catalog";
 import type { EstadoAcceso, Registration, TipoEventoAcceso } from "../generated/prisma/client";
 
@@ -84,10 +85,15 @@ accessRouter.post("/verify", accessVerifyLimiter, requireRole("STAFF_ACCESO", "S
 
     const registration = await prisma.registration.findUnique({
         where: { qrToken },
-        select: CAMPOS_STAFF,
+        select: { ...CAMPOS_STAFF, esPrueba: true },
     });
 
     if (!registration || registration.estatusPago !== "PAGADO") {
+        return res.status(404).json({ ok: false, motivo: "QR_INVALIDO" });
+    }
+    // No se puede escanear un pase real durante un ensayo, ni uno de prueba
+    // el día real — se trata como QR inválido, igual que si no existiera.
+    if (registration.esPrueba !== (await modoPruebaActivo())) {
         return res.status(404).json({ ok: false, motivo: "QR_INVALIDO" });
     }
 
@@ -165,8 +171,14 @@ accessRouter.post("/bloquear", requireRole("STAFF_ACCESO", "SUPER_ADMIN"), async
         return res.status(400).json({ error: "Falta qrToken" });
     }
 
-    const registration = await prisma.registration.findUnique({ where: { qrToken }, select: CAMPOS_STAFF });
+    const registration = await prisma.registration.findUnique({
+        where: { qrToken },
+        select: { ...CAMPOS_STAFF, esPrueba: true },
+    });
     if (!registration) {
+        return res.status(404).json({ error: "QR no encontrado" });
+    }
+    if (registration.esPrueba !== (await modoPruebaActivo())) {
         return res.status(404).json({ error: "QR no encontrado" });
     }
 
@@ -225,7 +237,7 @@ accessRouter.post("/bloquear", requireRole("STAFF_ACCESO", "SUPER_ADMIN"), async
 // paquete/academia para que el admin vea quién va entrando sin escanear él mismo.
 accessRouter.get("/historial", requireRole("STAFF_ACCESO", "SUPER_ADMIN"), async (_req, res) => {
     const registros = await prisma.registration.findMany({
-        where: { estadoAcceso: { not: "NO_USADO" } },
+        where: { estadoAcceso: { not: "NO_USADO" }, esPrueba: await modoPruebaActivo() },
         select: CAMPOS_STAFF,
         orderBy: { updatedAt: "desc" },
         take: 50,

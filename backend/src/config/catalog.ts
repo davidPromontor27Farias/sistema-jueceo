@@ -134,6 +134,12 @@ export function tipoBoletoPorCategoria(categoria: Categoria): TipoBoleto {
 // el pago, igual para todas las categorías, ver backend/src/routes/stripeWebhook.ts
 export const PREFIJO_ID_COMPETIDOR = "THB";
 
+// Prefijo de los folios del Evento de Prueba (ej. "PRB-023"), asignados sin
+// pago desde /evento-prueba — ver backend/src/routes/registrationsPrueba.ts.
+// Nunca choca con THB- (contador propio, scoped a esPrueba: true) y deja
+// obvio a simple vista qué competidores son de prueba.
+export const PREFIJO_ID_COMPETIDOR_PRUEBA = "PRB";
+
 // PENDIENTE: lista real de academias/crews del cliente. Placeholder de ejemplo
 // para el picklist con opción "Otra... (escribir)" en el formulario.
 export const ACADEMIAS_CONOCIDAS = ["Academia Ejemplo 1", "Academia Ejemplo 2", "Crew Ejemplo"] as const;

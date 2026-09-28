@@ -50,6 +50,47 @@ export async function postRegistration(
     }
 }
 
+// Confirmación del Evento de Prueba (/evento-prueba): sin Stripe de por
+// medio, el backend crea el registro y devuelve de una vez todo lo que la
+// tarjeta de confirmación necesita (mismo shape que RegistrationBySession
+// cuando estatusPago === "PAGADO", ver PaseConfirmado.tsx).
+export type RegistrationPruebaConfirmacion = {
+    nombreArtistico: string;
+    nombreCompleto: string;
+    categoriaLabel: string;
+    tipoBoleto: string;
+    competidorId: string | null;
+    qrDataUrl: string;
+    fotoUrl: string | null;
+};
+
+export async function postRegistrationPrueba(
+    payload: RegistrationPayload,
+): Promise<ApiResult<RegistrationPruebaConfirmacion>> {
+    if (!API_URL) {
+        console.error("NEXT_PUBLIC_API_URL no está configurada");
+        return { ok: false, error: "El servidor no está disponible en este momento." };
+    }
+
+    try {
+        const response = await fetch(`${API_URL}/api/registrations-prueba`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+        });
+        const data = (await parseJsonSafely(response)) as (RegistrationPruebaConfirmacion & { error?: string }) | null;
+
+        if (!response.ok || !data) {
+            return { ok: false, error: data?.error ?? "No se pudo completar el registro, revisa tus datos." };
+        }
+
+        return { ok: true, data };
+    } catch (error) {
+        console.error("Error al conectar con /api/registrations-prueba", error);
+        return { ok: false, error: "No se pudo conectar con el servidor. Intenta de nuevo." };
+    }
+}
+
 export type PreventaEstado = { activa: boolean; lugaresRestantes: number };
 
 export async function getPreventaEstado(): Promise<PreventaEstado> {

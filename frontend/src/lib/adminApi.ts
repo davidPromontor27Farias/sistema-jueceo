@@ -51,6 +51,9 @@ export type Enfrentamiento = {
     // POST /enfrentamientos/:id/cortar-turno y useSecuenciaBatalla.
     turnoACortadoEn: string | null;
     turnoBCortadoEn: string | null;
+    // Cuántas veces se ha repetido esta pelea por empate (0 = todavía no
+    // hubo empate). Ver useSecuenciaBatalla / fase "empate".
+    numeroDesempate: number;
     // Solo vienen en GET /enfrentamientos (lo usa /pantalla); en-curso no las
     // manda porque una batalla activa todavía no tiene puntaje que mostrar.
     puntajeA?: number | null;
@@ -155,6 +158,22 @@ export function getMe() {
     return adminFetch<{ admin: AdminInfo }>("/api/auth/me");
 }
 
+// Interruptor global: si el sistema completo (Preselección, Jueceo,
+// Brackets, Pantalla, Tablero, Control de Accesos) opera sobre los registros
+// del Evento de Prueba (/evento-prueba, sin pago) o sobre los reales pagados.
+// GET es público (lo usan también /pantalla y /pantalla/tablero para avisar
+// "MODO PRUEBA"); PATCH requiere SUPER_ADMIN.
+export function getConfiguracionEvento() {
+    return adminFetch<{ modoPrueba: boolean }>("/api/configuracion-evento");
+}
+
+export function patchConfiguracionEvento(modoPrueba: boolean) {
+    return adminFetch<{ modoPrueba: boolean }>("/api/configuracion-evento", {
+        method: "PATCH",
+        body: JSON.stringify({ modoPrueba }),
+    });
+}
+
 export function listAdmins() {
     return adminFetch<{ admins: AdminInfo[] }>("/api/admins");
 }
@@ -255,6 +274,23 @@ export type TurnoPreseleccion = {
 export function getTurnoPreseleccionActual(categoria: Categoria) {
     return adminFetch<{ turno: TurnoPreseleccion }>(
         `/api/competencia/categorias/${categoria}/preseleccion/turno-actual`,
+    );
+}
+
+// Los siguientes en la fila de Preselección (sin el que está en tarima, sin
+// puntajes): lo usa el tablero secundario para "próximas presentaciones".
+export type ProximoPreseleccionItem = {
+    id: string;
+    nombreArtistico: string;
+    nombres: string;
+    apellidos: string;
+    competidorId: string | null;
+    fotoUrl: string | null;
+};
+
+export function getProximosPreseleccion(categoria: Categoria) {
+    return adminFetch<{ proximos: ProximoPreseleccionItem[] }>(
+        `/api/competencia/categorias/${categoria}/preseleccion/proximos`,
     );
 }
 
@@ -404,7 +440,7 @@ export type PuntajesCalificacion = {
 
 export type ResultadoCalificacion =
     | { completo: false; faltan: number }
-    | { completo: true; empatado: true }
+    | { completo: true; empatado: true; numeroDesempate: number }
     | { completo: true; empatado: false; ganadorId: string };
 
 export function calificarEnfrentamiento(id: string, puntajes: PuntajesCalificacion) {

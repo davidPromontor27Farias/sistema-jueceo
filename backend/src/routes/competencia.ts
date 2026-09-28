@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "../lib/prisma";
 import { requireRole } from "../middleware/requireAuth";
 import { sinIndefinidos } from "../lib/utils";
+import { modoPruebaActivo } from "../lib/modoEvento";
 import {
     emparejarAleatorio,
     emparejarConSiembra,
@@ -161,15 +162,18 @@ async function intentarAvanzarRonda(categoria: Categoria, rondaNumero: number): 
 
 type ResultadoCalificacion =
     | { completo: false; faltan: number }
-    | { completo: true; empatado: true }
+    | { completo: true; empatado: true; numeroDesempate: number }
     | { completo: true; empatado: false; ganadorId: string };
 
 // Se llama después de guardar cada CalificacionJuez. Si ya calificaron todos
-// los jueces activos, suma los 5 criterios de cada uno por competidor; el que
-// tenga más gana. Si empatan, desempata la suma de Originalidad entre jueces
-// (confirmado con el cliente). Si sigue empatado, se deja EN_CURSO para que
-// el SUPER_ADMIN/STAFF_JUECEO lo resuelva a mano (respaldo manual, Art. 40
-// del reglamento) — no se inventa un segundo criterio de desempate.
+// los jueces activos (de ESTE intento, ver numeroDesempate), suma los 5
+// criterios de cada uno por competidor; el que tenga más gana. Si empatan,
+// se lanza automáticamente una ronda extra para los mismos dos competidores
+// (estilo Red Bull BC One "sudden death", confirmado con el cliente): se
+// incrementa numeroDesempate y se limpia el corte de turno previo, sin
+// tocar el estatus (sigue EN_CURSO) — el bracket no avanza hasta que haya un
+// ganador real, sin importar cuántas rondas de desempate hagan falta. No se
+// usa Originalidad ni ningún otro criterio de desempate.
 async function intentarResolverEnfrentamiento(enfrentamientoId: string): Promise<ResultadoCalificacion> {
     const enfrentamiento = await prisma.enfrentamiento.findUnique({ where: { id: enfrentamientoId } });
     if (!enfrentamiento || !enfrentamiento.competidorAId || !enfrentamiento.competidorBId) {
@@ -177,7 +181,9 @@ async function intentarResolverEnfrentamiento(enfrentamientoId: string): Promise
     }
 
     const juecesActivos = await prisma.adminUser.count({ where: { rol: "JUEZ", activo: true } });
-    const calificaciones = await prisma.calificacionJuez.findMany({ where: { enfrentamientoId } });
+    const calificaciones = await prisma.calificacionJuez.findMany({
+        where: { enfrentamientoId, numeroDesempate: enfrentamiento.numeroDesempate },
+    });
 
     if (calificaciones.length < juecesActivos) {
         return { completo: false, faltan: juecesActivos - calificaciones.length };
@@ -185,26 +191,21 @@ async function intentarResolverEnfrentamiento(enfrentamientoId: string): Promise
 
     let totalA = 0;
     let totalB = 0;
-    let originalidadTotalA = 0;
-    let originalidadTotalB = 0;
     for (const c of calificaciones) {
         totalA += c.tecnicaA + c.ejecucionA + c.vocabularioA + c.musicalidadA + c.originalidadA;
         totalB += c.tecnicaB + c.ejecucionB + c.vocabularioB + c.musicalidadB + c.originalidadB;
-        originalidadTotalA += c.originalidadA;
-        originalidadTotalB += c.originalidadB;
     }
 
-    let ganadorId: string | null = null;
-    if (totalA !== totalB) {
-        ganadorId = totalA > totalB ? enfrentamiento.competidorAId : enfrentamiento.competidorBId;
-    } else if (originalidadTotalA !== originalidadTotalB) {
-        ganadorId = originalidadTotalA > originalidadTotalB ? enfrentamiento.competidorAId : enfrentamiento.competidorBId;
+    if (totalA === totalB) {
+        const nuevoNumero = enfrentamiento.numeroDesempate + 1;
+        await prisma.enfrentamiento.update({
+            where: { id: enfrentamientoId },
+            data: { numeroDesempate: nuevoNumero, turnoACortadoEn: null, turnoBCortadoEn: null },
+        });
+        return { completo: true, empatado: true, numeroDesempate: nuevoNumero };
     }
 
-    if (!ganadorId) {
-        return { completo: true, empatado: true };
-    }
-
+    const ganadorId = totalA > totalB ? enfrentamiento.competidorAId : enfrentamiento.competidorBId;
     await prisma.enfrentamiento.update({
         where: { id: enfrentamientoId },
         data: { ganadorId, estatus: "FINALIZADO" },
@@ -248,14 +249,19 @@ export interface DesglosePuntaje {
 // puntaje y su desglose en /pantalla. Si el enfrentamiento no tiene
 // calificaciones (bye, o resuelto por respaldo manual) devuelve null en vez
 // de 0, para no dar a entender que el puntaje fue cero.
-async function conPuntajes<T extends { id: string }>(
+async function conPuntajes<T extends { id: string; numeroDesempate: number }>(
     enfrentamientos: T[],
 ): Promise<(T & { puntajeA: number | null; puntajeB: number | null; desgloseA: DesglosePuntaje | null; desgloseB: DesglosePuntaje | null })[]> {
     const ids = enfrentamientos.map((e) => e.id);
     if (ids.length === 0) return [];
 
+    // Agrupado también por numeroDesempate: si hubo una ronda de desempate,
+    // las calificaciones del intento anterior (ya empatado) siguen en la
+    // tabla para historial, pero no deben sumarse junto con las de la ronda
+    // vigente — cada enfrentamiento busca su suma con la llave
+    // `${id}:${numeroDesempate}` más abajo.
     const sumas = await prisma.calificacionJuez.groupBy({
-        by: ["enfrentamientoId"],
+        by: ["enfrentamientoId", "numeroDesempate"],
         where: { enfrentamientoId: { in: ids } },
         _sum: {
             tecnicaA: true,
@@ -270,10 +276,10 @@ async function conPuntajes<T extends { id: string }>(
             originalidadB: true,
         },
     });
-    const mapaSumas = new Map(sumas.map((s) => [s.enfrentamientoId, s._sum]));
+    const mapaSumas = new Map(sumas.map((s) => [`${s.enfrentamientoId}:${s.numeroDesempate}`, s._sum]));
 
     return enfrentamientos.map((e) => {
-        const s = mapaSumas.get(e.id);
+        const s = mapaSumas.get(`${e.id}:${e.numeroDesempate}`);
         if (!s) return { ...e, puntajeA: null, puntajeB: null, desgloseA: null, desgloseB: null };
         const desgloseA: DesglosePuntaje = {
             tecnica: s.tecnicaA ?? 0,
@@ -325,6 +331,23 @@ competenciaRouter.patch(
             return res.status(400).json({ errors: parsed.error.flatten() });
         }
 
+        // No dejar que un cambio de estatus a mano regrese a PRESELECCION o
+        // NO_INICIADA si ya existen enfrentamientos: el panel de admin decide
+        // qué mostrar (ranking de preselección vs. lista de enfrentamientos)
+        // según este campo, así que "retroceder" con un bracket ya armado le
+        // esconde al admin el panel de enfrentamientos por completo — incluso
+        // con batallas ya EN_CURSO. Para regenerar un bracket hay que borrar
+        // los enfrentamientos primero (mismo requisito que ya exigen
+        // generar-bracket / generar-top-bracket).
+        if (parsed.data.estatus === "PRESELECCION" || parsed.data.estatus === "NO_INICIADA") {
+            const existentes = await prisma.enfrentamiento.count({ where: { categoria } });
+            if (existentes > 0) {
+                return res.status(409).json({
+                    error: "Ya existen enfrentamientos para esta categoría. Bórralos antes de regresarla a este estatus.",
+                });
+            }
+        }
+
         // Si el estatus deja de ser PRESELECCION (a mano, sin pasar por
         // generar-top-bracket), se limpia el turno en tarima para no dejar un
         // competidor "fantasma" marcado, y se cancela cualquier avance
@@ -356,7 +379,7 @@ competenciaRouter.get("/competidores", requireRole("SUPER_ADMIN", "STAFF_JUECEO"
     }
 
     const competidores = await prisma.registration.findMany({
-        where: { categoria: rawCategoria as Categoria, estatusPago: "PAGADO" },
+        where: { categoria: rawCategoria as Categoria, estatusPago: "PAGADO", esPrueba: await modoPruebaActivo() },
         select: { id: true, nombreArtistico: true, nombres: true, apellidos: true, competidorId: true },
         orderBy: { nombreArtistico: "asc" },
     });
@@ -379,7 +402,7 @@ competenciaRouter.get(
         const categoria = rawCategoria as Categoria;
 
         const participantes = await prisma.registration.findMany({
-            where: { categoria, estatusPago: "PAGADO" },
+            where: { categoria, estatusPago: "PAGADO", esPrueba: await modoPruebaActivo() },
             select: { id: true, nombreArtistico: true, nombres: true, apellidos: true, competidorId: true, fotoUrl: true },
             orderBy: { nombreArtistico: "asc" },
         });
@@ -436,6 +459,13 @@ competenciaRouter.post("/preseleccion/:registrationId/calificar", requireRole("J
         return res.status(404).json({ error: "Competidor no encontrado" });
     }
     if (registro.estatusPago !== "PAGADO") {
+        return res.status(400).json({ error: "Este competidor no tiene pago confirmado" });
+    }
+    // findUnique solo admite el id, así que el filtro por modo se hace acá:
+    // si el registro no corresponde al modo activo (prueba vs real), se
+    // trata igual que "no encontrado" — no se puede calificar a alguien del
+    // otro modo.
+    if (registro.esPrueba !== (await modoPruebaActivo())) {
         return res.status(400).json({ error: "Este competidor no tiene pago confirmado" });
     }
 
@@ -610,6 +640,47 @@ competenciaRouter.get("/categorias/:categoria/preseleccion/turno-actual", async 
     return res.json({ turno });
 });
 
+const MAXIMO_PROXIMOS_PRESELECCION = 5;
+
+// Público: los siguientes en la fila de Preselección (mismo orden alfabético
+// que usa avanzarTurnoPreseleccion), sin el que está en tarima ahora mismo y
+// sin quienes ya terminaron de calificarse. Solo nombres, sin puntajes — lo
+// consume el tablero secundario (frontend/src/app/pantalla/tablero/page.tsx)
+// para mostrar "próximas presentaciones" igual que ya hace con las próximas
+// batallas 1v1.
+competenciaRouter.get("/categorias/:categoria/preseleccion/proximos", async (req, res) => {
+    const categoria = req.params.categoria as Categoria;
+    if (!TODAS_LAS_CATEGORIAS.includes(categoria)) {
+        return res.status(404).json({ error: "Categoría desconocida" });
+    }
+
+    const estado = await prisma.estadoCategoria.findUnique({
+        where: { categoria },
+        select: { turnoPreseleccionActualId: true },
+    });
+    const participantes = await prisma.registration.findMany({
+        where: { categoria, estatusPago: "PAGADO", esPrueba: await modoPruebaActivo() },
+        select: { id: true, nombreArtistico: true, nombres: true, apellidos: true, competidorId: true, fotoUrl: true },
+        orderBy: { nombreArtistico: "asc" },
+    });
+    const juecesActivos = await prisma.adminUser.count({ where: { rol: "JUEZ", activo: true } });
+    const conteos = await prisma.puntuacionPreseleccion.groupBy({
+        by: ["registrationId"],
+        where: { registrationId: { in: participantes.map((p) => p.id) } },
+        _count: { id: true },
+    });
+    const conteoPorId = new Map(conteos.map((c) => [c.registrationId, c._count.id]));
+
+    const proximos = participantes
+        .filter(
+            (p) =>
+                p.id !== estado?.turnoPreseleccionActualId && (conteoPorId.get(p.id) ?? 0) < juecesActivos,
+        )
+        .slice(0, MAXIMO_PROXIMOS_PRESELECCION);
+
+    return res.json({ proximos });
+});
+
 // Público: ranking completo (todos los pagados, aunque no hayan sido
 // calificados todavía) de la fase de Preselección. Lo consume /pantalla para
 // el recorrido de resultados uno por uno, mejor puntaje primero, una vez que
@@ -624,7 +695,7 @@ competenciaRouter.get("/categorias/:categoria/preseleccion/resultados", async (r
     }
 
     const participantes = await prisma.registration.findMany({
-        where: { categoria, estatusPago: "PAGADO" },
+        where: { categoria, estatusPago: "PAGADO", esPrueba: await modoPruebaActivo() },
         select: { id: true, nombreArtistico: true, nombres: true, apellidos: true, competidorId: true, fotoUrl: true },
     });
     const ids = participantes.map((p) => p.id);
@@ -710,7 +781,7 @@ async function avanzarTurnoPreseleccion(
     }
 
     const participantes = await prisma.registration.findMany({
-        where: { categoria, estatusPago: "PAGADO" },
+        where: { categoria, estatusPago: "PAGADO", esPrueba: await modoPruebaActivo() },
         select: { id: true },
         orderBy: { nombreArtistico: "asc" },
     });
@@ -725,6 +796,20 @@ async function avanzarTurnoPreseleccion(
         _count: { id: true },
     });
     const conteoPorId = new Map(puntuaciones.map((p) => [p.registrationId, p._count.id]));
+
+    // "Siguiente" nunca debe abandonar a quien está en tarima si todavía no
+    // lo calificaron todos los jueces activos — ni el botón manual ni el
+    // avance automático (que solo llega hasta acá cuando `esperado` sí
+    // coincide, y por diseño el turno esperado ya debería estar completo en
+    // ese caso). Sin esta guarda, un click manual que llega justo después de
+    // que el avance automático ya corrió por su cuenta puede saltarse a la
+    // siguiente persona sin darle oportunidad de ser calificada.
+    if (estado.turnoPreseleccionActualId) {
+        const calificacionesActual = conteoPorId.get(estado.turnoPreseleccionActualId) ?? 0;
+        if (calificacionesActual < juecesActivos) {
+            return { error: "Todavía falta que algún juez califique al competidor que está en tarima." };
+        }
+    }
 
     const idxActual = estado.turnoPreseleccionActualId
         ? participantes.findIndex((p) => p.id === estado.turnoPreseleccionActualId)
@@ -763,8 +848,11 @@ async function avanzarTurnoPreseleccion(
 }
 
 // Solo staff: avanza a mano al siguiente participante de la cola fija —
-// arranca la fila (nadie sube a tarima solo) y sirve de respaldo/override si
-// hace falta saltar el avance automático de más arriba.
+// arranca la fila (nadie sube a tarima solo) y también sirve para saltarse a
+// mano la espera de DURACION_RESULTADOS_PRESELECCION_MS una vez que el turno
+// actual ya quedó completo. No puede abandonar a alguien que todavía no
+// terminó de calificarse (ver la guarda en avanzarTurnoPreseleccion) — no es
+// una forma de saltarse a un competidor sin calificar.
 competenciaRouter.post(
     "/categorias/:categoria/preseleccion/siguiente-turno",
     requireRole("SUPER_ADMIN", "STAFF_JUECEO"),
@@ -813,7 +901,7 @@ competenciaRouter.post(
         }
 
         const competidores = await prisma.registration.findMany({
-            where: { categoria, estatusPago: "PAGADO" },
+            where: { categoria, estatusPago: "PAGADO", esPrueba: await modoPruebaActivo() },
             select: { id: true },
         });
         if (competidores.length < 2) {
@@ -829,12 +917,20 @@ competenciaRouter.post(
             emparejarAleatorio,
         );
 
-        await prisma.enfrentamiento.createMany({ data: filas });
-        await prisma.estadoCategoria.upsert({
-            where: { categoria },
-            create: { categoria, estatus: "EN_CURSO", totalRondas },
-            update: { estatus: "EN_CURSO", totalRondas },
-        });
+        // En una sola transacción: si el proceso se interrumpe entre las dos
+        // escrituras (ej. crash, redeploy, hot-reload en dev), sin esto se
+        // podían quedar los enfrentamientos creados pero la categoría
+        // atascada en un estatus viejo — le pasó justo a BGIRLS en pruebas
+        // (el bracket ya existía pero el estatus se quedó en PRESELECCION,
+        // escondiéndole al admin el panel de enfrentamientos por completo).
+        await prisma.$transaction([
+            prisma.enfrentamiento.createMany({ data: filas }),
+            prisma.estadoCategoria.upsert({
+                where: { categoria },
+                create: { categoria, estatus: "EN_CURSO", totalRondas },
+                update: { estatus: "EN_CURSO", totalRondas },
+            }),
+        ]);
 
         const creados = await prisma.enfrentamiento.findMany({
             where: { categoria, rondaNumero: 1 },
@@ -882,7 +978,7 @@ competenciaRouter.post(
         }
 
         const competidores = await prisma.registration.findMany({
-            where: { categoria, estatusPago: "PAGADO" },
+            where: { categoria, estatusPago: "PAGADO", esPrueba: await modoPruebaActivo() },
             select: { id: true, nombreArtistico: true, nombres: true, apellidos: true },
         });
         if (competidores.length < CORTES_PRESELECCION[0]!) {
@@ -976,17 +1072,22 @@ competenciaRouter.post(
         const filas = filasParaRonda(categoria, 1, nombreRonda(1, totalRondas), idsCorte, emparejarConSiembra);
 
         cancelarAvanceAutomatico(categoria);
-        await prisma.enfrentamiento.createMany({ data: filas });
-        await prisma.estadoCategoria.update({
-            where: { categoria },
-            data: {
-                estatus: "EN_CURSO",
-                totalRondas,
-                turnoPreseleccionActualId: null,
-                turnoPreseleccionIniciadoEn: null,
-                turnoPreseleccionCompletadoEn: null,
-            },
-        });
+        // Misma razón que en /generar-bracket: una sola transacción evita que
+        // una interrupción a mitad de camino deje los enfrentamientos creados
+        // con la categoría atascada en PRESELECCION.
+        await prisma.$transaction([
+            prisma.enfrentamiento.createMany({ data: filas }),
+            prisma.estadoCategoria.update({
+                where: { categoria },
+                data: {
+                    estatus: "EN_CURSO",
+                    totalRondas,
+                    turnoPreseleccionActualId: null,
+                    turnoPreseleccionIniciadoEn: null,
+                    turnoPreseleccionCompletadoEn: null,
+                },
+            }),
+        ]);
 
         const creados = await prisma.enfrentamiento.findMany({
             where: { categoria, rondaNumero: 1 },
@@ -1039,22 +1140,35 @@ competenciaRouter.get(
 
         const ids = enfrentamientos.map((e) => e.id);
         const juezId = req.admin!.id;
+        const numeroDesempatePorId = new Map(enfrentamientos.map((e) => [e.id, e.numeroDesempate]));
 
         const [misCalificaciones, conteos, juecesActivos] = await Promise.all([
             prisma.calificacionJuez.findMany({
                 where: { juezId, enfrentamientoId: { in: ids } },
-                select: { enfrentamientoId: true },
+                select: { enfrentamientoId: true, numeroDesempate: true },
             }),
             prisma.calificacionJuez.groupBy({
-                by: ["enfrentamientoId"],
+                by: ["enfrentamientoId", "numeroDesempate"],
                 where: { enfrentamientoId: { in: ids } },
                 _count: { id: true },
             }),
             prisma.adminUser.count({ where: { rol: "JUEZ", activo: true } }),
         ]);
 
-        const yaCalifique = new Set(misCalificaciones.map((c) => c.enfrentamientoId));
-        const conteoPorId = new Map(conteos.map((c) => [c.enfrentamientoId, c._count.id]));
+        // Ambos filtrados a la ronda de desempate VIGENTE de cada
+        // enfrentamiento — si hubo una ronda de desempate, un juez que ya
+        // había calificado el intento anterior (ya empatado) debe volver a
+        // ver el formulario, no "ya calificaste".
+        const yaCalifique = new Set(
+            misCalificaciones
+                .filter((c) => c.numeroDesempate === numeroDesempatePorId.get(c.enfrentamientoId))
+                .map((c) => c.enfrentamientoId),
+        );
+        const conteoPorId = new Map(
+            conteos
+                .filter((c) => c.numeroDesempate === numeroDesempatePorId.get(c.enfrentamientoId))
+                .map((c) => [c.enfrentamientoId, c._count.id]),
+        );
 
         const resultado = enfrentamientos.map((e) => ({
             ...e,
@@ -1068,8 +1182,8 @@ competenciaRouter.get(
 );
 
 // Solo jueces: calificar una batalla en curso. Si con esta calificación ya
-// respondieron todos los jueces activos, resuelve el ganador (o lo deja para
-// respaldo manual si empata incluso en Originalidad).
+// respondieron todos los jueces activos, resuelve el ganador (o lanza una
+// ronda de desempate si empatan, ver intentarResolverEnfrentamiento).
 competenciaRouter.post("/enfrentamientos/:id/calificar", requireRole("JUEZ"), async (req, res) => {
     const { id } = req.params;
     if (typeof id !== "string") {
@@ -1094,7 +1208,12 @@ competenciaRouter.post("/enfrentamientos/:id/calificar", requireRole("JUEZ"), as
 
     try {
         await prisma.calificacionJuez.create({
-            data: { enfrentamientoId: id, juezId: req.admin!.id, ...parsed.data },
+            data: {
+                enfrentamientoId: id,
+                juezId: req.admin!.id,
+                numeroDesempate: enfrentamiento.numeroDesempate,
+                ...parsed.data,
+            },
         });
     } catch (error: any) {
         if (error.code === "P2002") {

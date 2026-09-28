@@ -216,6 +216,14 @@ model Enfrentamiento {
   turnoACortadoEn DateTime?
   turnoBCortadoEn DateTime?
 
+  // Cuántas veces se ha repetido esta MISMA pelea por empate (0 = todavía no
+  // hubo empate). Estilo Red Bull BC One "sudden death": en vez de un
+  // segundo criterio de desempate o resolución manual, se lanza una ronda
+  // extra para los mismos dos competidores y los jueces vuelven a calificar
+  // — se repite hasta que haya un ganador claro. Ver
+  // intentarResolverEnfrentamiento en backend/src/routes/competencia.ts.
+  numeroDesempate Int @default(0)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -227,9 +235,11 @@ model Enfrentamiento {
 
 // Calificación de un juez para un enfrentamiento: puntúa a ambos competidores
 // (A y B) en los 5 criterios del reglamento (Artículo 35), escala 1-5 cada
-// uno. Un juez califica cada enfrentamiento una sola vez (@@unique). El
-// ganador se calcula sumando estos puntajes entre todos los jueces activos
-// (ver intentarResolverEnfrentamiento en backend/src/routes/competencia.ts).
+// uno. Un juez califica cada intento de una pelea una sola vez (@@unique
+// incluye numeroDesempate, así que SÍ puede volver a calificar la misma
+// pelea si llega a haber una ronda de desempate). El ganador se calcula
+// sumando estos puntajes entre todos los jueces activos (ver
+// intentarResolverEnfrentamiento en backend/src/routes/competencia.ts).
 model CalificacionJuez {
   id String @id @default(uuid())
 
@@ -237,6 +247,11 @@ model CalificacionJuez {
   enfrentamiento   Enfrentamiento @relation(fields: [enfrentamientoId], references: [id])
   juezId           String
   juez             AdminUser      @relation(fields: [juezId], references: [id])
+
+  // A qué ronda de desempate corresponde esta calificación puntual (0 =
+  // calificación original). Evita mezclar puntajes de distintos intentos al
+  // sumar — ver conPuntajes en backend/src/routes/competencia.ts.
+  numeroDesempate Int @default(0)
 
   tecnicaA      Int
   ejecucionA    Int
@@ -253,7 +268,7 @@ model CalificacionJuez {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([enfrentamientoId, juezId])
+  @@unique([enfrentamientoId, numeroDesempate, juezId])
   @@map("calificaciones_juez")
 }
 
@@ -305,6 +320,20 @@ model PantallaEstado {
   @@map("pantalla_estado")
 }
 
+// Fila única (id fijo = 1): si el sistema completo (Preselección, Jueceo,
+// Brackets, Pantalla, Tablero, Control de Accesos) debe operar sobre los
+// registros del Evento de Prueba (Registration.esPrueba: true, capturados
+// sin pago desde /evento-prueba) o sobre los reales pagados con Stripe. Se
+// cambia desde un interruptor en el panel de SUPER_ADMIN — ver
+// backend/src/lib/modoEvento.ts y PATCH /api/configuracion-evento.
+model ConfiguracionEvento {
+  id         Int      @id @default(1)
+  modoPrueba Boolean  @default(false)
+  updatedAt  DateTime @updatedAt
+
+  @@map("configuracion_evento")
+}
+
 model Registration {
   id                    String      @id @default(uuid())
 
@@ -317,7 +346,10 @@ model Registration {
   sexo                  Sexo
   estado                String
   ciudad                String
-  correo                String      @unique
+  // Único junto con esPrueba (no solo) para que la misma persona pueda tener
+  // un registro real Y uno de prueba con el mismo correo sin chocar — el
+  // staff suele probar con sus propios correos reales durante un ensayo.
+  correo                String
   telefono              String
   instagram             String?
   academiaCrew          String?
@@ -354,6 +386,14 @@ model Registration {
   // Se reutiliza entre años para el mismo correo, ver backend/src/routes/stripeWebhook.ts
   competidorId          String?     @unique
 
+  // true si este registro vino de /evento-prueba (sin pago real, ver
+  // backend/src/routes/registrationsPrueba.ts), no del formulario real con
+  // Stripe. Todo lo que arma el roster de competidores (brackets,
+  // preselección, control de accesos, vista de registros) filtra por este
+  // campo según el modo activo — ver backend/src/lib/modoEvento.ts — para
+  // que un ensayo nunca se mezcle con inscripciones reales, ni al revés.
+  esPrueba              Boolean     @default(false)
+
   createdAt             DateTime    @default(now())
   updatedAt             DateTime    @updatedAt
 
@@ -364,6 +404,7 @@ model Registration {
   puntuacionesPreseleccion   PuntuacionPreseleccion[]
   turnosPreseleccionComoActual EstadoCategoria[]
 
+  @@unique([correo, esPrueba])
   @@index([estatusPago])
   @@index([categoria])
   @@map("registrations")

@@ -127,7 +127,11 @@ function JueceoContenido() {
             ))}
 
             {pendientes.map((b) => (
-                <FormularioCalificacion key={b.id} enfrentamiento={b} onCalificado={cargar} />
+                // La key incluye numeroDesempate para que el formulario
+                // remonte limpio (estrellas en cero) cuando arranca la
+                // ronda de desempate, en vez de seguir mostrando la
+                // pantalla de "ya enviado" de la ronda anterior.
+                <FormularioCalificacion key={`${b.id}-${b.numeroDesempate}`} enfrentamiento={b} onCalificado={cargar} />
             ))}
         </div>
     );
@@ -316,7 +320,8 @@ function FormularioCalificacion({
                 )}
                 {resultado.completo && resultado.empatado && (
                     <p className="text-boss-green">
-                        Calificación enviada. Hubo empate incluso en Originalidad — el staff lo va a resolver a mano.
+                        ¡Empate! Se lanza automáticamente la ronda de desempate {resultado.numeroDesempate} —
+                        prepárense para calificar de nuevo.
                     </p>
                 )}
                 {resultado.completo && !resultado.empatado && (

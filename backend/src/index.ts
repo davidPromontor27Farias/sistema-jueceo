@@ -10,6 +10,8 @@ import { adminsRouter } from "./routes/admins";
 import { competenciaRouter } from "./routes/competencia";
 import { pantallaRouter } from "./routes/pantalla";
 import { vistaRegistrosRouter } from "./routes/vistaRegistros";
+import { configuracionEventoRouter } from "./routes/configuracionEvento";
+import { registrationsPruebaRouter } from "./routes/registrationsPrueba";
 import { origenesFrontendPermitidos } from "./lib/origenes";
 
 
@@ -40,6 +42,8 @@ app.use("/api/webhooks/stripe", stripeWebhookRouter)
 app.use(express.json());
 app.use(cookieParser());
 app.use("/api/registrations", registrationsRouter);
+app.use("/api/registrations-prueba", registrationsPruebaRouter);
+app.use("/api/configuracion-evento", configuracionEventoRouter);
 app.use("/api/access", accessRouter);
 app.use("/api/auth", authRouter);
 app.use("/api/admins", adminsRouter);

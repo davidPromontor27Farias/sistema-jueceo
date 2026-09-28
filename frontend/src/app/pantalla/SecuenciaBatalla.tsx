@@ -15,6 +15,9 @@ export const DURACION_TURNO_MS = 30_000;
 const DURACION_RESULTADOS_MS = 7_000;
 const DURACION_GANADOR_MS = 10_000;
 const DURACION_BRACKET_MS = 8_000;
+// Cuánto se queda /pantalla mostrando el aviso "¡EMPATE!" antes de reiniciar
+// la secuencia completa para la ronda de desempate (ver iniciarEmpate).
+const DURACION_EMPATE_MS = 6_000;
 
 type FaseSecuencia =
     | "normal"
@@ -24,6 +27,7 @@ type FaseSecuencia =
     | "presentando_b"
     | "turno_b"
     | "esperando_jueces"
+    | "empate"
     | "resultados"
     | "ganador"
     | "bracket";
@@ -159,6 +163,18 @@ export function useSecuenciaBatalla(enfrentamientos: Enfrentamiento[]): EstadoSe
         );
     };
 
+    // Empate: el backend ya incrementó numeroDesempate y dejó la batalla
+    // EN_CURSO para una ronda extra (ver intentarResolverEnfrentamiento). Se
+    // muestra un aviso fijo (sin depender del tiempo transcurrido, es un
+    // reinicio deliberado) y después se reinicia la secuencia completa desde
+    // el anuncio VS para esta misma pareja.
+    const iniciarEmpate = (enf: Enfrentamiento) => {
+        limpiarTimers();
+        setActivo(enf);
+        setFase("empate");
+        timeoutRef.current = setTimeout(() => iniciarAnuncioVs(enf, DURACION_ANUNCIO_VS_MS), DURACION_EMPATE_MS);
+    };
+
     // Detecta que arrancó una batalla nueva en la categoría enfocada. El
     // trabajo se difiere con Promise.resolve().then(...) para no llamar
     // setState de forma síncrona dentro del cuerpo del efecto.
@@ -206,16 +222,25 @@ export function useSecuenciaBatalla(enfrentamientos: Enfrentamiento[]): EstadoSe
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [enfrentamientos, fase, activo]);
 
-    // Detecta que la batalla que esperábamos ya tiene ganador. Si hay
-    // desglose de puntajes (se calificó con jueces, no fue respaldo manual)
-    // pasa primero por "resultados"; si no, va directo a "ganador".
+    // Detecta que la batalla que esperábamos ya tiene ganador — o que empató
+    // y el backend ya lanzó una ronda de desempate (numeroDesempate subió,
+    // sigue EN_CURSO sin ganador). Si hay ganador y desglose de puntajes (se
+    // calificó con jueces, no fue respaldo manual) pasa primero por
+    // "resultados"; si no hay desglose, va directo a "ganador"; si empató,
+    // pasa por el aviso de "empate" antes de repetir la secuencia completa.
     useEffect(() => {
         if (fase !== "esperando_jueces" || !activo) return;
         const actualizado = enfrentamientos.find((e) => e.id === activo.id);
-        if (!(actualizado?.estatus === "FINALIZADO" && actualizado.ganador)) return;
+        if (!actualizado) return;
+
+        const yaTieneGanador = actualizado.estatus === "FINALIZADO" && actualizado.ganador;
+        const huboEmpateNuevo = actualizado.numeroDesempate > activo.numeroDesempate;
+        if (!yaTieneGanador && !huboEmpateNuevo) return;
 
         Promise.resolve().then(() => {
-            if (actualizado.desgloseA && actualizado.desgloseB) {
+            if (huboEmpateNuevo) {
+                iniciarEmpate(actualizado);
+            } else if (actualizado.desgloseA && actualizado.desgloseB) {
                 iniciarResultados(actualizado);
             } else {
                 iniciarGanador(actualizado);
@@ -477,7 +502,26 @@ export function SecuenciaOverlay({
         <main className="fixed inset-0 z-50 flex flex-col items-center justify-center overflow-hidden bg-boss-black px-8 text-center">
             <p className="absolute inset-x-0 top-10 z-10 font-display text-lg uppercase tracking-widest text-boss-gray">
                 {CATEGORIAS[enfrentamiento.categoria]} · {enfrentamiento.ronda}
+                {enfrentamiento.numeroDesempate > 0 && (
+                    <span className="text-yellow-400"> · Ronda de desempate {enfrentamiento.numeroDesempate}</span>
+                )}
             </p>
+
+            {fase === "empate" && (
+                <PanelVersus
+                    enfrentamiento={enfrentamiento}
+                    centro={
+                        <div className="flex flex-col items-center gap-2">
+                            <span className="animate-impacto-fuego font-display text-6xl italic text-yellow-400 [text-shadow:0_4px_0_rgba(0,0,0,0.5),0_0_24px_rgba(250,204,21,0.9)] sm:text-8xl">
+                                ¡EMPATE!
+                            </span>
+                            <span className="font-display text-lg uppercase tracking-widest text-white sm:text-2xl">
+                                Ronda de desempate {enfrentamiento.numeroDesempate}
+                            </span>
+                        </div>
+                    }
+                />
+            )}
 
             {fase === "anuncio_vs" && (
                 <PanelVersus
