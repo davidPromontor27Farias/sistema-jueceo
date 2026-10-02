@@ -6,7 +6,7 @@ import type { RolAdmin } from "../generated/prisma/client";
 declare global {
     namespace Express {
         interface Request {
-            admin?: { id: string; nombre: string; correo: string; rol: RolAdmin };
+            admin?: { id: string; nombre: string; correo: string; rol: RolAdmin; escenarioId: string | null };
         }
     }
 }
@@ -36,7 +36,7 @@ export function requireRole(...rolesPermitidos: RolAdmin[]) {
             return res.status(403).json({ error: "No tienes permiso para esta acción" });
         }
 
-        req.admin = { id: admin.id, nombre: admin.nombre, correo: admin.correo, rol: admin.rol };
+        req.admin = { id: admin.id, nombre: admin.nombre, correo: admin.correo, rol: admin.rol, escenarioId: admin.escenarioId };
         next();
     };
 }

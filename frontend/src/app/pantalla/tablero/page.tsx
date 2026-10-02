@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import Image from "next/image";
 import {
     getCategoriasEstado,
     getEnfrentamientos,
+    getEscenariosDeCategoria,
     getProximosPreseleccion,
     getTurnoPreseleccionActual,
     type CategoriaEstado,
@@ -114,6 +116,22 @@ function elegirCategoriaActiva(
 //      reciente (entre batalla y batalla).
 //   4. Si nada aplica: "Esperando la siguiente categoría...".
 export default function TableroPage() {
+    return (
+        <Suspense fallback={null}>
+            <TableroContenido />
+        </Suspense>
+    );
+}
+
+function TableroContenido() {
+    const searchParams = useSearchParams();
+    // Sin ?escenario=, esta pantalla general recorre TODOS los escenarios de
+    // TODAS las categorías en Preselección/Repechaje y muestra el turno más
+    // reciente (mismo criterio de siempre) — para categorías con un solo
+    // escenario esto se reduce exactamente al comportamiento de antes. Con
+    // ?escenario=<id>, la pantalla de ESA tarima física solo sigue la cola de
+    // ese escenario puntual, en la categoría a la que esté asignado ahora.
+    const escenarioParam = searchParams.get("escenario");
     const [datos, setDatos] = useState<DatosTablero | null | undefined>(undefined);
 
     useEffect(() => {
@@ -124,7 +142,9 @@ export default function TableroPage() {
             if (cancelado || !resCategorias.ok) return;
 
             const enCurso = resCategorias.data.categorias.filter((c) => c.estatus === "EN_CURSO");
-            const enPreseleccion = resCategorias.data.categorias.filter((c) => c.estatus === "PRESELECCION");
+            const enPreseleccion = resCategorias.data.categorias.filter(
+                (c) => c.estatus === "PRESELECCION" || c.estatus === "REPECHAJE_DESEMPATE",
+            );
 
             const candidatasBatalla = await Promise.all(
                 enCurso.map(async (categoria) => {
@@ -147,20 +167,40 @@ export default function TableroPage() {
             }
 
             if (enPreseleccion.length > 0) {
+                // Uno o varios escenarios por categoría: se junta (categoria,
+                // escenario) de todas las categorías en preselección/repechaje
+                // y se busca el turno vigente de cada combinación — filtrado a
+                // un solo escenario puntual si viene ?escenario=.
+                const paresCategoriaEscenario = (
+                    await Promise.all(
+                        enPreseleccion.map(async (categoria) => {
+                            const resEscenarios = await getEscenariosDeCategoria(categoria.categoria);
+                            if (!resEscenarios.ok) return [];
+                            const escenarios = escenarioParam
+                                ? resEscenarios.data.escenarios.filter((e) => e.id === escenarioParam)
+                                : resEscenarios.data.escenarios;
+                            return escenarios.map((escenario) => ({ categoria, escenarioId: escenario.id }));
+                        }),
+                    )
+                ).flat();
+                if (cancelado) return;
+
                 const turnos = await Promise.all(
-                    enPreseleccion.map(async (categoria) => {
-                        const resTurno = await getTurnoPreseleccionActual(categoria.categoria);
+                    paresCategoriaEscenario.map(async ({ categoria, escenarioId }) => {
+                        const resTurno = await getTurnoPreseleccionActual(categoria.categoria, escenarioId);
                         const turno = resTurno.ok ? resTurno.data.turno : null;
-                        return turno ? { categoria, turno } : null;
+                        return turno ? { categoria, escenarioId, turno } : null;
                     }),
                 );
                 if (cancelado) return;
 
-                const activos = turnos.filter((t): t is { categoria: CategoriaEstado; turno: NonNullable<TurnoPreseleccion> } => !!t);
+                const activos = turnos.filter(
+                    (t): t is { categoria: CategoriaEstado; escenarioId: string; turno: NonNullable<TurnoPreseleccion> } => !!t,
+                );
                 if (activos.length > 0) {
                     activos.sort((a, b) => new Date(b.turno.iniciadoEn).getTime() - new Date(a.turno.iniciadoEn).getTime());
                     const elegida = activos[0]!;
-                    const resProximos = await getProximosPreseleccion(elegida.categoria.categoria);
+                    const resProximos = await getProximosPreseleccion(elegida.categoria.categoria, elegida.escenarioId);
                     if (cancelado) return;
                     setDatos({
                         tipo: "preseleccion",
@@ -190,7 +230,7 @@ export default function TableroPage() {
             cancelado = true;
             clearInterval(id);
         };
-    }, []);
+    }, [escenarioParam]);
 
     // Pantalla fija de "solo mostrar" (nadie la toca ni la scrollea): todo el
     // layout vive dentro de h-screen/overflow-hidden y las 5 filas de

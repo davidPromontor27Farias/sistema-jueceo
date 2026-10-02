@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import Image from "next/image";
-import { CATEGORIAS } from "@/config/catalog";
+import { CATEGORIAS, type Categoria } from "@/config/catalog";
 import {
     getEnfrentamientos,
+    getEscenariosDeCategoria,
     getPantallaEstado,
     getResultadosPreseleccion,
     getTurnoPreseleccionActual,
@@ -31,11 +33,54 @@ function nombreCompetidor(c: Enfrentamiento["competidorA"]): string {
 }
 
 export default function PantallaPublicaPage() {
+    return (
+        <Suspense fallback={null}>
+            <PantallaPublicaContenido />
+        </Suspense>
+    );
+}
+
+// Escenario efectivo para la fase de Preselección/Repechaje: si viene
+// ?escenario= en la URL (pantalla física de UN escenario), se usa ese. Sin
+// el param, se intenta auto-elegir SOLO si la categoría tiene exactamente un
+// escenario activo (el caso de siempre, sin multiescenario) — con más de uno
+// activos y sin param no hay un "turno único" que mostrar en esta pantalla
+// general, así que se deja sin overlay de Preselección (cae al resto de
+// vistas normales) hasta que el staff especifique cuál escenario mostrar.
+function useEscenarioEfectivo(categoria: Categoria | null | undefined): string | null {
+    const searchParams = useSearchParams();
+    const escenarioParam = searchParams.get("escenario");
+    const [escenarioAuto, setEscenarioAuto] = useState<string | null>(null);
+
+    useEffect(() => {
+        if (escenarioParam || !categoria) {
+            setEscenarioAuto(null);
+            return;
+        }
+        let cancelado = false;
+        getEscenariosDeCategoria(categoria).then((resultado) => {
+            if (cancelado) return;
+            if (resultado.ok && resultado.data.escenarios.length === 1) {
+                setEscenarioAuto(resultado.data.escenarios[0]!.id);
+            } else {
+                setEscenarioAuto(null);
+            }
+        });
+        return () => {
+            cancelado = true;
+        };
+    }, [categoria, escenarioParam]);
+
+    return escenarioParam ?? escenarioAuto;
+}
+
+function PantallaPublicaContenido() {
     const [estado, setEstado] = useState<PantallaEstado | null>(null);
     const [enfrentamientos, setEnfrentamientos] = useState<Enfrentamiento[]>([]);
     const [todosLosEnfrentamientos, setTodosLosEnfrentamientos] = useState<Enfrentamiento[]>([]);
     const [turnoPreseleccion, setTurnoPreseleccion] = useState<TurnoPreseleccion>(null);
     const [resultadosPreseleccion, setResultadosPreseleccion] = useState<ResultadoPreseleccionItem[]>([]);
+    const escenarioId = useEscenarioEfectivo(estado?.categoriaEnfocada);
 
     useEffect(() => {
         let cancelado = false;
@@ -78,14 +123,15 @@ export default function PantallaPublicaPage() {
     // de "Le toca a..." + cronómetro en cuanto el staff avance el turno,
     // aunque la pantalla esté mostrando otra cosa (o esté APAGADA).
     useEffect(() => {
-        if (!estado?.categoriaEnfocada) {
+        if (!estado?.categoriaEnfocada || !escenarioId) {
+            setTurnoPreseleccion(null);
             return;
         }
 
         const categoria = estado.categoriaEnfocada;
         let cancelado = false;
         const poll = async () => {
-            const resultado = await getTurnoPreseleccionActual(categoria);
+            const resultado = await getTurnoPreseleccionActual(categoria, escenarioId);
             if (!cancelado && resultado.ok) setTurnoPreseleccion(resultado.data.turno);
         };
         poll();
@@ -94,7 +140,7 @@ export default function PantallaPublicaPage() {
             cancelado = true;
             clearInterval(id);
         };
-    }, [estado?.categoriaEnfocada]);
+    }, [estado?.categoriaEnfocada, escenarioId]);
 
     // Ranking completo de Preselección (para el recorrido de resultados una
     // vez que se acaba la fila de turnos, ver useRecapPreseleccion) — mismo

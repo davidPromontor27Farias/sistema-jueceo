@@ -12,6 +12,7 @@ import { pantallaRouter } from "./routes/pantalla";
 import { vistaRegistrosRouter } from "./routes/vistaRegistros";
 import { configuracionEventoRouter } from "./routes/configuracionEvento";
 import { registrationsPruebaRouter } from "./routes/registrationsPrueba";
+import { escenariosRouter } from "./routes/escenarios";
 import { origenesFrontendPermitidos } from "./lib/origenes";
 
 
@@ -47,6 +48,7 @@ app.use("/api/configuracion-evento", configuracionEventoRouter);
 app.use("/api/access", accessRouter);
 app.use("/api/auth", authRouter);
 app.use("/api/admins", adminsRouter);
+app.use("/api/escenarios", escenariosRouter);
 app.use("/api/competencia", competenciaRouter);
 app.use("/api/pantalla", pantallaRouter);
 app.use("/api/vista-registros", vistaRegistrosRouter);

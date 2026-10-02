@@ -9,6 +9,7 @@ import { getConfiguracionEvento, patchConfiguracionEvento, type RolAdmin } from 
 const NAV_ITEMS: { href: string; label: string; abrev: string; roles: RolAdmin[] }[] = [
     { href: "/admin", label: "Panel", abrev: "PN", roles: ["SUPER_ADMIN", "STAFF_ACCESO", "STAFF_JUECEO", "JUEZ"] },
     { href: "/admin/usuarios", label: "Usuarios", abrev: "US", roles: ["SUPER_ADMIN"] },
+    { href: "/admin/escenarios", label: "Escenarios", abrev: "ES", roles: ["SUPER_ADMIN"] },
     { href: "/admin/pantallas", label: "Pantallas", abrev: "PT", roles: ["SUPER_ADMIN"] },
     { href: "/admin/competencia", label: "Competencia", abrev: "CP", roles: ["SUPER_ADMIN", "STAFF_JUECEO"] },
     { href: "/admin/jueceo", label: "Jueceo", abrev: "JZ", roles: ["JUEZ"] },

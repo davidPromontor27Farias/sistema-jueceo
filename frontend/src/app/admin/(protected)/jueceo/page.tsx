@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { RequireRol } from "../layout";
+import { useAdminSession } from "../../AdminSessionContext";
 import { CATEGORIAS, type Categoria } from "@/config/catalog";
 import {
     calificarEnfrentamiento,
@@ -53,6 +54,7 @@ export default function AdminJueceoPage() {
 }
 
 function JueceoContenido() {
+    const { admin } = useAdminSession();
     const [batallas, setBatallas] = useState<EnfrentamientoEnCurso[] | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [categoriasPreseleccion, setCategoriasPreseleccion] = useState<Categoria[]>([]);
@@ -83,7 +85,9 @@ function JueceoContenido() {
             const resp = await getCategoriasEstado();
             if (cancelado || !resp.ok) return;
             setCategoriasPreseleccion(
-                resp.data.categorias.filter((c) => c.estatus === "PRESELECCION").map((c) => c.categoria),
+                resp.data.categorias
+                    .filter((c) => c.estatus === "PRESELECCION" || c.estatus === "REPECHAJE_DESEMPATE")
+                    .map((c) => c.categoria),
             );
         };
         poll();
@@ -102,9 +106,19 @@ function JueceoContenido() {
             <h1 className="font-display text-2xl uppercase tracking-wide text-white">Jueceo</h1>
             <p className="mt-1 text-boss-gray">Califica la batalla activa según los criterios del reglamento.</p>
 
-            {categoriasPreseleccion.map((categoria) => (
-                <PreseleccionCategoria key={categoria} categoria={categoria} />
-            ))}
+            {categoriasPreseleccion.length > 0 && !admin?.escenarioId && (
+                <div className="mt-6 rounded-lg border border-yellow-500/40 bg-yellow-950/20 p-5">
+                    <p className="text-yellow-300">
+                        Tu cuenta no tiene un escenario asignado — contacta al administrador para que te asigne uno
+                        en <span className="text-white">Usuarios</span> antes de poder calificar la preselección.
+                    </p>
+                </div>
+            )}
+
+            {admin?.escenarioId &&
+                categoriasPreseleccion.map((categoria) => (
+                    <PreseleccionCategoria key={categoria} categoria={categoria} escenarioId={admin.escenarioId!} />
+                ))}
 
             {error && <p className="mt-4 text-sm font-medium text-red-400">{error}</p>}
 
@@ -149,23 +163,24 @@ const PUNTAJES_PRESELECCION_INICIALES: PuntajesPreseleccion = {
 // tarima ahora mismo (mismo turno que se ve en /pantalla) en vez de dejar que
 // el juez recorra una lista libre a su propio ritmo — el proceso es igual
 // que una batalla 1v1, pero en solitario.
-function PreseleccionCategoria({ categoria }: { categoria: Categoria }) {
+function PreseleccionCategoria({ categoria, escenarioId }: { categoria: Categoria; escenarioId: string }) {
     const [participantes, setParticipantes] = useState<ParticipantePreseleccion[] | null>(null);
     const [turno, setTurno] = useState<TurnoPreseleccion>(null);
     const [error, setError] = useState<string | null>(null);
 
     const cargar = () => {
-        Promise.all([getParticipantesPreseleccion(categoria), getTurnoPreseleccionActual(categoria)]).then(
-            ([respParticipantes, respTurno]) => {
-                if (respParticipantes.ok) {
-                    setParticipantes(respParticipantes.data.participantes);
-                    setError(null);
-                } else {
-                    setError(respParticipantes.error);
-                }
-                if (respTurno.ok) setTurno(respTurno.data.turno);
-            },
-        );
+        Promise.all([
+            getParticipantesPreseleccion(categoria, escenarioId),
+            getTurnoPreseleccionActual(categoria, escenarioId),
+        ]).then(([respParticipantes, respTurno]) => {
+            if (respParticipantes.ok) {
+                setParticipantes(respParticipantes.data.participantes);
+                setError(null);
+            } else {
+                setError(respParticipantes.error);
+            }
+            if (respTurno.ok) setTurno(respTurno.data.turno);
+        });
     };
 
     useEffect(() => {
@@ -173,7 +188,7 @@ function PreseleccionCategoria({ categoria }: { categoria: Categoria }) {
         const id = setInterval(cargar, 3000);
         return () => clearInterval(id);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [categoria]);
+    }, [categoria, escenarioId]);
 
     // El turno-actual es público (no sabe quién pregunta), así que para saber
     // si YO ya lo califiqué hay que cruzarlo con la lista de participantes

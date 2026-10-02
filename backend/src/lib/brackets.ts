@@ -120,3 +120,25 @@ export function nombreRonda(numero: number, total: number): string {
 export function totalRondasParaParticipantes(cantidad: number): number {
     return Math.max(1, Math.ceil(Math.log2(cantidad)));
 }
+
+// Reparte una lista YA ORDENADA (por orden de registro) en `n` lotes
+// contiguos lo más parejos posible, para la Preselección Paralela
+// Multiescenario (ver POST /categorias/:categoria/preseleccion/iniciar): el
+// lote 0 corresponde al escenario de menor `orden`, y así sucesivamente. El
+// sobrante de una división no exacta (ej. 61 ÷ 3 = 20 con 1 sobrante) se
+// reparte de a uno extra a los primeros lotes, para que ningún escenario
+// quede con más de 1 competidor de diferencia respecto a otro.
+export function repartirEnLotes<T>(idsOrdenados: T[], n: number): T[][] {
+    if (n <= 0) return [];
+    const base = Math.floor(idsOrdenados.length / n);
+    const sobrante = idsOrdenados.length % n;
+
+    const lotes: T[][] = [];
+    let cursor = 0;
+    for (let i = 0; i < n; i++) {
+        const tamano = base + (i < sobrante ? 1 : 0);
+        lotes.push(idsOrdenados.slice(cursor, cursor + tamano));
+        cursor += tamano;
+    }
+    return lotes;
+}

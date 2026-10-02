@@ -11,9 +11,22 @@ export type AdminInfo = {
     rol: RolAdmin;
     activo?: boolean;
     createdAt?: string;
+    // Solo tiene sentido para rol JUEZ: a qué escenario físico pertenece
+    // durante la fase de Preselección. Ver Escenario.
+    escenarioId?: string | null;
+    escenario?: { id: string; nombre: string } | null;
 };
 
-export type EstatusCompetencia = "NO_INICIADA" | "PRESELECCION" | "EN_CURSO" | "FINALIZADA";
+export type Escenario = {
+    id: string;
+    nombre: string;
+    orden: number;
+    activo: boolean;
+    createdAt: string;
+    updatedAt: string;
+};
+
+export type EstatusCompetencia = "NO_INICIADA" | "PRESELECCION" | "REPECHAJE_DESEMPATE" | "EN_CURSO" | "FINALIZADA";
 export type CategoriaEstado = { categoria: Categoria; label: string; estatus: EstatusCompetencia };
 
 export type EstatusEnfrentamiento = "PENDIENTE" | "EN_CURSO" | "FINALIZADO";
@@ -178,15 +191,43 @@ export function listAdmins() {
     return adminFetch<{ admins: AdminInfo[] }>("/api/admins");
 }
 
-export function createAdmin(data: { nombre: string; correo: string; password: string; rol: RolAdmin }) {
+export function createAdmin(data: {
+    nombre: string;
+    correo: string;
+    password: string;
+    rol: RolAdmin;
+    escenarioId?: string | null;
+}) {
     return adminFetch<{ admin: AdminInfo }>("/api/admins", { method: "POST", body: JSON.stringify(data) });
 }
 
 export function updateAdmin(
     id: string,
-    data: Partial<{ nombre: string; rol: RolAdmin; activo: boolean; password: string }>,
+    data: Partial<{ nombre: string; rol: RolAdmin; activo: boolean; password: string; escenarioId: string | null }>,
 ) {
     return adminFetch<{ admin: AdminInfo }>(`/api/admins/${id}`, { method: "PATCH", body: JSON.stringify(data) });
+}
+
+// Borrado físico de una cuenta. Solo funciona si nunca calificó ni escaneó
+// accesos (el backend lo bloquea con 409 si ya tiene historial) — para esos
+// casos la vía correcta es desactivarla con updateAdmin(id, {activo:false}).
+export function deleteAdmin(id: string) {
+    return adminFetch<{ ok: true }>(`/api/admins/${id}`, { method: "DELETE" });
+}
+
+// Escenarios físicos (tarimas) donde se corre la Preselección en paralelo.
+// GET lo usan SUPER_ADMIN y STAFF_JUECEO (para poblar selects y sub-paneles);
+// POST/PATCH solo SUPER_ADMIN.
+export function getEscenarios() {
+    return adminFetch<{ escenarios: Escenario[] }>("/api/escenarios");
+}
+
+export function createEscenario(data: { nombre: string; orden?: number; activo?: boolean }) {
+    return adminFetch<{ escenario: Escenario }>("/api/escenarios", { method: "POST", body: JSON.stringify(data) });
+}
+
+export function updateEscenario(id: string, data: Partial<{ nombre: string; orden: number; activo: boolean }>) {
+    return adminFetch<{ escenario: Escenario }>(`/api/escenarios/${id}`, { method: "PATCH", body: JSON.stringify(data) });
 }
 
 export function getCategoriasEstado() {
@@ -233,9 +274,9 @@ export type ParticipantePreseleccion = {
     yaCalifique: boolean;
 };
 
-export function getParticipantesPreseleccion(categoria: Categoria) {
+export function getParticipantesPreseleccion(categoria: Categoria, escenarioId: string) {
     return adminFetch<{ participantes: ParticipantePreseleccion[]; juecesActivos: number }>(
-        `/api/competencia/preseleccion/participantes?categoria=${categoria}`,
+        `/api/competencia/preseleccion/participantes?categoria=${categoria}&escenarioId=${escenarioId}`,
     );
 }
 
@@ -263,6 +304,7 @@ export function calificarPreseleccion(registrationId: string, puntajes: Puntajes
 export type TurnoPreseleccion = {
     participante: CompetidorResumen;
     categoria: Categoria;
+    escenarioId: string;
     iniciadoEn: string;
     calificacionesRecibidas: number;
     juecesActivos: number;
@@ -271,9 +313,9 @@ export type TurnoPreseleccion = {
     desglose: DesglosePuntaje | null;
 } | null;
 
-export function getTurnoPreseleccionActual(categoria: Categoria) {
+export function getTurnoPreseleccionActual(categoria: Categoria, escenarioId: string) {
     return adminFetch<{ turno: TurnoPreseleccion }>(
-        `/api/competencia/categorias/${categoria}/preseleccion/turno-actual`,
+        `/api/competencia/categorias/${categoria}/preseleccion/turno-actual?escenarioId=${escenarioId}`,
     );
 }
 
@@ -288,9 +330,28 @@ export type ProximoPreseleccionItem = {
     fotoUrl: string | null;
 };
 
-export function getProximosPreseleccion(categoria: Categoria) {
+export function getProximosPreseleccion(categoria: Categoria, escenarioId: string) {
     return adminFetch<{ proximos: ProximoPreseleccionItem[] }>(
-        `/api/competencia/categorias/${categoria}/preseleccion/proximos`,
+        `/api/competencia/categorias/${categoria}/preseleccion/proximos?escenarioId=${escenarioId}`,
+    );
+}
+
+// Escenarios participando en la Preselección/Repechaje vigente de una
+// categoría (uno por cada sub-panel que debe mostrar el admin).
+export function getEscenariosDeCategoria(categoria: Categoria) {
+    return adminFetch<{ escenarios: { id: string; nombre: string; orden: number }[] }>(
+        `/api/competencia/categorias/${categoria}/preseleccion/escenarios`,
+    );
+}
+
+// Arranca la Preselección de una categoría: reparte a los competidores
+// pagados entre los escenarios con jueces activos. Reemplaza el uso de
+// patchCategoriaEstado(categoria, "PRESELECCION"), que ahora el backend
+// rechaza explícitamente.
+export function iniciarPreseleccion(categoria: Categoria) {
+    return adminFetch<{ estatus: "PRESELECCION"; reparto: { escenarioId: string; escenarioNombre: string; cantidad: number }[] }>(
+        `/api/competencia/categorias/${categoria}/preseleccion/iniciar`,
+        { method: "POST" },
     );
 }
 
@@ -304,20 +365,28 @@ export type ResultadoPreseleccionItem = {
     apellidos: string;
     competidorId: string | null;
     fotoUrl: string | null;
+    // A qué escenario quedó asignado en el reparto proporcional, y en qué
+    // ronda de repechaje está (0 = preselección normal).
+    escenarioId: string | null;
+    escenarioNombre: string | null;
+    numeroDesempate: number;
     calificacionesRecibidas: number;
+    // Jueces activos DE SU ESCENARIO (ya no es un solo número global, cada
+    // fila puede tener uno distinto — ver Preselección Paralela Multiescenario).
+    juecesActivos: number;
     puntajeTotal: number | null;
     completo: boolean;
 };
 
 export function getResultadosPreseleccion(categoria: Categoria) {
-    return adminFetch<{ resultados: ResultadoPreseleccionItem[]; juecesActivos: number }>(
+    return adminFetch<{ resultados: ResultadoPreseleccionItem[] }>(
         `/api/competencia/categorias/${categoria}/preseleccion/resultados`,
     );
 }
 
-export function siguienteTurnoPreseleccion(categoria: Categoria) {
+export function siguienteTurnoPreseleccion(categoria: Categoria, escenarioId: string) {
     return adminFetch<{ turno: TurnoPreseleccion; terminado: boolean }>(
-        `/api/competencia/categorias/${categoria}/preseleccion/siguiente-turno`,
+        `/api/competencia/categorias/${categoria}/preseleccion/siguiente-turno?escenarioId=${escenarioId}`,
         { method: "POST" },
     );
 }
@@ -347,18 +416,18 @@ export type GenerarTopBracketResultado =
           cortadosEn: number;
           totalCalificados: number;
       }
+    // Empate exacto en la frontera de corte: el backend ya lanzó
+    // automáticamente la ronda extra de repechaje (categoría pasó a
+    // REPECHAJE_DESEMPATE) — no requiere ninguna acción manual del admin,
+    // solo informarle quiénes van a repetir presentación.
+    | { ok: false; motivo: "REPECHAJE_DESEMPATE"; empatados: ParticipanteEmpatado[] }
     | { ok: false; motivo: "FALTAN_CALIFICACIONES"; error: string; faltantes: FaltantePreseleccion[] }
-    | { ok: false; motivo: "EMPATE_EN_CORTE"; cortePosicion: number; cuposLibres: number; empatados: ParticipanteEmpatado[] }
     | { ok: false; motivo: "ERROR"; error: string };
 
-// No reusa adminFetch (como verificarAcceso): un 409 aquí puede traer
-// `faltantes` o `empatados` con el detalle que necesita el panel de admin
-// para desbloquear el corte, y adminFetch descarta todo el cuerpo salvo
-// `error` en las respuestas no-ok.
-export async function generarTopBracket(
-    categoria: Categoria,
-    desempatePreseleccionIds?: string[],
-): Promise<GenerarTopBracketResultado> {
+// No reusa adminFetch (como verificarAcceso): la respuesta 202 (repechaje) y
+// el 409 (faltantes) traen cuerpos con detalle que necesita el panel de
+// admin, y adminFetch descarta todo salvo `error` en las respuestas no-ok.
+export async function generarTopBracket(categoria: Categoria): Promise<GenerarTopBracketResultado> {
     if (!API_URL) {
         console.error("NEXT_PUBLIC_API_URL no está configurada");
         return { ok: false, motivo: "ERROR", error: "El servidor no está disponible en este momento." };
@@ -369,9 +438,13 @@ export async function generarTopBracket(
             method: "POST",
             credentials: "include",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(desempatePreseleccionIds ? { desempatePreseleccionIds } : {}),
         });
         const data = await parseJsonSafely(response);
+
+        if (response.status === 202) {
+            const body = data as { empatados?: ParticipanteEmpatado[] } | null;
+            return { ok: false, motivo: "REPECHAJE_DESEMPATE", empatados: body?.empatados ?? [] };
+        }
 
         if (response.ok) {
             const body = data as {
@@ -383,23 +456,7 @@ export async function generarTopBracket(
             return { ok: true, ...body };
         }
 
-        const body = data as {
-            error?: string;
-            faltantes?: FaltantePreseleccion[];
-            empatados?: ParticipanteEmpatado[];
-            cortePosicion?: number;
-            cuposLibres?: number;
-        } | null;
-
-        if (body?.error === "EMPATE_EN_CORTE") {
-            return {
-                ok: false,
-                motivo: "EMPATE_EN_CORTE",
-                cortePosicion: body.cortePosicion ?? 0,
-                cuposLibres: body.cuposLibres ?? 0,
-                empatados: body.empatados ?? [],
-            };
-        }
+        const body = data as { error?: string; faltantes?: FaltantePreseleccion[] } | null;
         if (body?.faltantes) {
             return {
                 ok: false,

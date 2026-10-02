@@ -74,6 +74,15 @@ model AdminUser {
   rol          RolAdmin
   activo       Boolean  @default(true)
 
+  // Solo tiene sentido para rol JUEZ: a qué escenario físico pertenece
+  // durante la fase de Preselección (ver Escenario). Se ignora para los
+  // demás roles. Nullable porque un JUEZ recién creado no tiene escenario
+  // hasta que el admin se lo asigna — se bloquea con error claro al intentar
+  // iniciar Preselección si hay jueces activos sin escenario asignado (ver
+  // POST /categorias/:categoria/preseleccion/iniciar en competencia.ts).
+  escenarioId String?
+  escenario   Escenario? @relation(fields: [escenarioId], references: [id])
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -82,6 +91,32 @@ model AdminUser {
   eventosAcceso                   AccesoEvento[]
 
   @@map("admin_users")
+}
+
+// Escenario físico (tarima) donde se corre la fase de Preselección en
+// paralelo con otros escenarios. Catálogo simple, sin FK a un "evento" (el
+// sistema opera sobre un único evento activo a la vez, igual que
+// ConfiguracionEvento). Los jueces (AdminUser.escenarioId) se reparten entre
+// escenarios; los competidores de cada categoría se dividen proporcionalmente
+// por orden de registro entre los escenarios que tengan al menos un juez
+// activo asignado al momento de iniciar la Preselección de esa categoría —
+// ver POST /categorias/:categoria/preseleccion/iniciar.
+model Escenario {
+  id     String  @id @default(uuid())
+  nombre String  @unique
+  // Desempata el reparto de "sobrantes" al dividir competidores en lotes
+  // proporcionales, y define el orden de despliegue en el panel de admin.
+  orden  Int     @default(0)
+  activo Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  jueces       AdminUser[]
+  turnos       TurnoPreseleccionEscenario[]
+  competidores Registration[]
+
+  @@map("escenarios")
 }
 
 // Estado actual del QR de acceso de un registro. Uno solo por QR:
@@ -144,6 +179,14 @@ enum EstatusCompetencia {
   // cualquier enfrentamiento. Opcional por categoría — las chicas pueden
   // saltar directo a EN_CURSO y usar el sorteo aleatorio de siempre.
   PRESELECCION
+  // Empate exacto detectado en la frontera del corte del Top N (ver
+  // POST .../generar-top-bracket): los competidores involucrados vuelven a
+  // presentarse, uno a uno, en su mismo escenario de origen, y los
+  // recalifican los jueces de ese escenario — se repite hasta que
+  // desempaten, mismo patrón que numeroDesempate en Enfrentamiento. Al
+  // resolverse, el sistema arma el Top Bracket automáticamente y pasa a
+  // EN_CURSO sin intervención del admin.
+  REPECHAJE_DESEMPATE
   EN_CURSO
   FINALIZADA
 }
@@ -158,25 +201,39 @@ model EstadoCategoria {
   totalRondas Int?
   updatedAt   DateTime            @updatedAt
 
-  // Turno actual de la fase de Preselección: qué participante está en tarima
-  // ahora mismo, compartido entre /pantalla (overlay con cronómetro de 30s,
-  // ver frontend/src/app/pantalla/SecuenciaPreseleccion.tsx) y admin/jueceo
-  // (a quién calificar). Se limpia (ambos a null) al salir de PRESELECCION,
-  // ya sea generando el Top Bracket o cambiando el estatus a mano — ver
-  // backend/src/routes/competencia.ts.
-  turnoPreseleccionActualId   String?
-  turnoPreseleccionActual     Registration? @relation(fields: [turnoPreseleccionActualId], references: [id])
-  turnoPreseleccionIniciadoEn DateTime?
-  // Momento en que el turno actual quedó completo (todos los jueces activos
-  // ya calificaron), para poder avanzar solo al siguiente sin depender de un
-  // setTimeout en memoria del proceso — si el servidor se reinicia justo en
-  // esa ventana de espera (ej. hot-reload en dev), el avance normal se
-  // pierde; con esto, cualquier siguiente consulta de turno-actual detecta
-  // que ya se cumplió el tiempo y avanza sola (ver turnoActualDeCategoria en
-  // backend/src/routes/competencia.ts).
-  turnoPreseleccionCompletadoEn DateTime?
-
   @@map("estado_categorias")
+}
+
+// Turno actual de la fase de Preselección, uno por cada combinación de
+// categoría+escenario activo en ella (reemplaza el turno único que existía
+// antes de la Preselección Paralela Multiescenario): qué participante está
+// en tarima ahora mismo EN ESE ESCENARIO, compartido entre /pantalla?escenario=
+// (overlay con cronómetro, ver frontend/src/app/pantalla/SecuenciaPreseleccion.tsx)
+// y admin/jueceo (a quién debe calificar un juez de ese escenario). Se crea
+// al iniciar la Preselección de la categoría (ver
+// POST /categorias/:categoria/preseleccion/iniciar) y se resetea (turnoActualId
+// a null) para los competidores empatados al entrar a REPECHAJE_DESEMPATE.
+model TurnoPreseleccionEscenario {
+  id          String    @id @default(uuid())
+  categoria   Categoria
+  escenarioId String
+  escenario   Escenario @relation(fields: [escenarioId], references: [id])
+
+  turnoActualId   String?
+  turnoActual     Registration? @relation(fields: [turnoActualId], references: [id])
+  turnoIniciadoEn DateTime?
+  // Momento en que el turno actual quedó completo (todos los jueces activos
+  // de ESTE escenario ya calificaron), para poder avanzar solo al siguiente
+  // sin depender de un setTimeout en memoria del proceso — si el servidor se
+  // reinicia justo en esa ventana de espera (ej. hot-reload en dev), el
+  // avance normal se pierde; con esto, cualquier siguiente consulta de
+  // turno-actual detecta que ya se cumplió el tiempo y avanza sola (ver
+  // turnoActualDeCategoria en backend/src/routes/competencia.ts).
+  turnoCompletadoEn DateTime?
+  updatedAt         DateTime  @updatedAt
+
+  @@unique([categoria, escenarioId])
+  @@map("turnos_preseleccion_escenario")
 }
 
 enum EstatusEnfrentamiento {
@@ -287,6 +344,14 @@ model PuntuacionPreseleccion {
   juezId         String
   juez           AdminUser    @relation(fields: [juezId], references: [id])
 
+  // A qué ronda de desempate en la frontera de corte corresponde esta
+  // calificación (0 = calificación original de Preselección). Evita mezclar
+  // puntajes de distintos intentos al sumar — el puntaje vigente de un
+  // competidor es siempre el de numeroDesempate = Registration.preseleccionNumeroDesempate.
+  // Mismo patrón que numeroDesempate en CalificacionJuez, pero por
+  // competidor (re-presentación individual) en vez de por pelea.
+  numeroDesempate Int @default(0)
+
   tecnica      Int
   ejecucion    Int
   vocabulario  Int
@@ -296,7 +361,7 @@ model PuntuacionPreseleccion {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([registrationId, juezId])
+  @@unique([registrationId, juezId, numeroDesempate])
   @@map("puntuaciones_preseleccion")
 }
 
@@ -394,6 +459,17 @@ model Registration {
   // que un ensayo nunca se mezcle con inscripciones reales, ni al revés.
   esPrueba              Boolean     @default(false)
 
+  // Escenario asignado durante el reparto proporcional al iniciar la
+  // Preselección de su categoría (snapshot, fijado una sola vez — ver
+  // POST /categorias/:categoria/preseleccion/iniciar). Null antes de que
+  // arranque la Preselección o para categorías que no la usan.
+  preseleccionEscenarioId String?
+  preseleccionEscenario   Escenario? @relation(fields: [preseleccionEscenarioId], references: [id])
+  // Ronda vigente de desempate en la frontera de corte (0 = calificación
+  // original). Solo sube para quienes quedan empatados en el límite del
+  // Top N — ver REPECHAJE_DESEMPATE y PuntuacionPreseleccion.numeroDesempate.
+  preseleccionNumeroDesempate Int @default(0)
+
   createdAt             DateTime    @default(now())
   updatedAt             DateTime    @updatedAt
 
@@ -402,7 +478,7 @@ model Registration {
   enfrentamientosGanados     Enfrentamiento[] @relation("EnfrentamientoGanador")
   eventosAcceso              AccesoEvento[]
   puntuacionesPreseleccion   PuntuacionPreseleccion[]
-  turnosPreseleccionComoActual EstadoCategoria[]
+  turnosPreseleccionComoActual TurnoPreseleccionEscenario[]
 
   @@unique([correo, esPrueba])
   @@index([estatusPago])

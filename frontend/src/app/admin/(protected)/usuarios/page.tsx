@@ -5,9 +5,12 @@ import { RequireRol } from "../layout";
 import { inputClass, Field } from "../../../registro/components/Field";
 import {
     createAdmin,
+    deleteAdmin,
+    getEscenarios,
     listAdmins,
     updateAdmin,
     type AdminInfo,
+    type Escenario,
     type RolAdmin,
 } from "@/lib/adminApi";
 
@@ -32,6 +35,7 @@ export default function AdminUsuariosPage() {
 
 function UsuariosContenido() {
     const [admins, setAdmins] = useState<AdminInfo[] | null>(null);
+    const [escenarios, setEscenarios] = useState<Escenario[]>([]);
     const [error, setError] = useState<string | null>(null);
 
     const recargar = async () => {
@@ -55,6 +59,9 @@ function UsuariosContenido() {
                 setError(resultado.error);
             }
         });
+        getEscenarios().then((resultado) => {
+            if (!cancelado && resultado.ok) setEscenarios(resultado.data.escenarios);
+        });
         return () => {
             cancelado = true;
         };
@@ -71,23 +78,24 @@ function UsuariosContenido() {
                 </p>
             )}
 
-            <FormularioNuevoAdmin onCreado={recargar} />
+            <FormularioNuevoAdmin escenarios={escenarios} onCreado={recargar} />
 
             <div className="mt-8 space-y-3">
                 {admins === null && <p className="text-boss-gray">Cargando...</p>}
                 {admins?.map((admin) => (
-                    <FilaAdmin key={admin.id} admin={admin} onCambio={recargar} />
+                    <FilaAdmin key={admin.id} admin={admin} escenarios={escenarios} onCambio={recargar} />
                 ))}
             </div>
         </div>
     );
 }
 
-function FormularioNuevoAdmin({ onCreado }: { onCreado: () => void }) {
+function FormularioNuevoAdmin({ escenarios, onCreado }: { escenarios: Escenario[]; onCreado: () => void }) {
     const [nombre, setNombre] = useState("");
     const [correo, setCorreo] = useState("");
     const [password, setPassword] = useState("");
     const [rol, setRol] = useState<RolAdmin>("STAFF_ACCESO");
+    const [escenarioId, setEscenarioId] = useState("");
     const [error, setError] = useState<string | null>(null);
     const [enviando, setEnviando] = useState(false);
 
@@ -96,7 +104,13 @@ function FormularioNuevoAdmin({ onCreado }: { onCreado: () => void }) {
         setError(null);
         setEnviando(true);
 
-        const resultado = await createAdmin({ nombre, correo, password, rol });
+        const resultado = await createAdmin({
+            nombre,
+            correo,
+            password,
+            rol,
+            escenarioId: rol === "JUEZ" && escenarioId ? escenarioId : null,
+        });
         setEnviando(false);
 
         if (!resultado.ok) {
@@ -108,6 +122,7 @@ function FormularioNuevoAdmin({ onCreado }: { onCreado: () => void }) {
         setCorreo("");
         setPassword("");
         setRol("STAFF_ACCESO");
+        setEscenarioId("");
         onCreado();
     };
 
@@ -155,6 +170,18 @@ function FormularioNuevoAdmin({ onCreado }: { onCreado: () => void }) {
                     ))}
                 </select>
             </Field>
+            {rol === "JUEZ" && (
+                <Field label="Escenario" hint="En qué tarima calificará durante la Preselección">
+                    <select value={escenarioId} onChange={(e) => setEscenarioId(e.target.value)} className={inputClass}>
+                        <option value="">Sin asignar</option>
+                        {escenarios.map((esc) => (
+                            <option key={esc.id} value={esc.id}>
+                                {esc.nombre}
+                            </option>
+                        ))}
+                    </select>
+                </Field>
+            )}
 
             <button
                 type="submit"
@@ -167,15 +194,24 @@ function FormularioNuevoAdmin({ onCreado }: { onCreado: () => void }) {
     );
 }
 
-function FilaAdmin({ admin, onCambio }: { admin: AdminInfo; onCambio: () => void }) {
+function FilaAdmin({ admin, escenarios, onCambio }: { admin: AdminInfo; escenarios: Escenario[]; onCambio: () => void }) {
     const [mostrarPassword, setMostrarPassword] = useState(false);
     const [nuevaPassword, setNuevaPassword] = useState("");
     const [guardando, setGuardando] = useState(false);
+    const [confirmandoEliminar, setConfirmandoEliminar] = useState(false);
+    const [eliminando, setEliminando] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
     const cambiarRol = async (rol: RolAdmin) => {
         setError(null);
         const resultado = await updateAdmin(admin.id, { rol });
+        if (!resultado.ok) setError(resultado.error);
+        onCambio();
+    };
+
+    const cambiarEscenario = async (escenarioId: string) => {
+        setError(null);
+        const resultado = await updateAdmin(admin.id, { escenarioId: escenarioId || null });
         if (!resultado.ok) setError(resultado.error);
         onCambio();
     };
@@ -204,6 +240,19 @@ function FilaAdmin({ admin, onCambio }: { admin: AdminInfo; onCambio: () => void
         setMostrarPassword(false);
     };
 
+    const eliminarCuenta = async () => {
+        setEliminando(true);
+        setError(null);
+        const resultado = await deleteAdmin(admin.id);
+        setEliminando(false);
+        if (!resultado.ok) {
+            setError(resultado.error);
+            setConfirmandoEliminar(false);
+            return;
+        }
+        onCambio();
+    };
+
     return (
         <div className="rounded-lg border border-boss-border bg-boss-panel/60 p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -227,6 +276,21 @@ function FilaAdmin({ admin, onCambio }: { admin: AdminInfo; onCambio: () => void
                         ))}
                     </select>
 
+                    {admin.rol === "JUEZ" && (
+                        <select
+                            value={admin.escenarioId ?? ""}
+                            onChange={(e) => cambiarEscenario(e.target.value)}
+                            className="rounded-md border border-boss-border bg-boss-black px-2 py-1.5 text-sm text-foreground"
+                        >
+                            <option value="">Sin escenario</option>
+                            {escenarios.map((esc) => (
+                                <option key={esc.id} value={esc.id}>
+                                    {esc.nombre}
+                                </option>
+                            ))}
+                        </select>
+                    )}
+
                     <button
                         type="button"
                         onClick={alternarActivo}
@@ -242,6 +306,35 @@ function FilaAdmin({ admin, onCambio }: { admin: AdminInfo; onCambio: () => void
                     >
                         Cambiar contraseña
                     </button>
+
+                    {!confirmandoEliminar ? (
+                        <button
+                            type="button"
+                            onClick={() => setConfirmandoEliminar(true)}
+                            className="rounded-md border border-red-500/40 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-red-400 transition-colors hover:border-red-500 hover:bg-red-950/40"
+                        >
+                            Eliminar
+                        </button>
+                    ) : (
+                        <div className="flex items-center gap-2">
+                            <span className="text-xs text-boss-gray">¿Seguro?</span>
+                            <button
+                                type="button"
+                                onClick={eliminarCuenta}
+                                disabled={eliminando}
+                                className="rounded-md bg-red-600 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-white transition-colors hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                                {eliminando ? "Eliminando..." : "Sí, eliminar"}
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setConfirmandoEliminar(false)}
+                                className="rounded-md border border-boss-border px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-white transition-colors hover:border-boss-red hover:text-boss-red"
+                            >
+                                Cancelar
+                            </button>
+                        </div>
+                    )}
                 </div>
             </div>
 

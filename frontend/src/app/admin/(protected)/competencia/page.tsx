@@ -10,9 +10,11 @@ import {
     getBatallasEnCurso,
     getCategoriasEstado,
     getEnfrentamientos,
+    getEscenariosDeCategoria,
     getPantallaEstado,
-    getParticipantesPreseleccion,
+    getResultadosPreseleccion,
     getTurnoPreseleccionActual,
+    iniciarPreseleccion,
     patchCategoriaEstado,
     patchPantallaEstado,
     siguienteTurnoPreseleccion,
@@ -24,8 +26,8 @@ import {
     type EstatusCompetencia,
     type EstatusEnfrentamiento,
     type ParticipanteEmpatado,
-    type ParticipantePreseleccion,
     type PantallaEstado,
+    type ResultadoPreseleccionItem,
     type TurnoPreseleccion,
 } from "@/lib/adminApi";
 import { useSecuenciaBatalla, type EstadoSecuencia } from "../../../pantalla/SecuenciaBatalla";
@@ -33,10 +35,16 @@ import { useSecuenciaBatalla, type EstadoSecuencia } from "../../../pantalla/Sec
 const ESTATUS_CATEGORIA_LABEL: Record<EstatusCompetencia, string> = {
     NO_INICIADA: "No iniciada",
     PRESELECCION: "Preselección",
+    REPECHAJE_DESEMPATE: "Repechaje (desempate)",
     EN_CURSO: "En curso",
     FINALIZADA: "Finalizada",
 };
-const ESTATUS_CATEGORIA_OPCIONES: EstatusCompetencia[] = ["NO_INICIADA", "PRESELECCION", "EN_CURSO", "FINALIZADA"];
+// Destinos que el admin puede elegir a mano en el selector de abajo.
+// PRESELECCION se arranca con su propio botón ("Iniciar preselección", reparte
+// a los competidores por escenario) y REPECHAJE_DESEMPATE lo controla el
+// sistema solo ante un empate en la frontera de corte — ninguno de los dos es
+// un destino manual válido (el backend los rechaza).
+const ESTATUS_CATEGORIA_OPCIONES: EstatusCompetencia[] = ["NO_INICIADA", "EN_CURSO", "FINALIZADA"];
 
 const ESTATUS_ENFRENTAMIENTO_LABEL: Record<EstatusEnfrentamiento, string> = {
     PENDIENTE: "Pendiente",
@@ -137,6 +145,21 @@ function CompetenciaContenido() {
         cargarCategorias();
     };
 
+    // Arranca la Preselección: reparte a los competidores pagados en lotes
+    // proporcionales por orden de registro entre los escenarios que tengan
+    // al menos un juez activo asignado (ver Preselección Paralela
+    // Multiescenario). Reemplaza el viejo cambiarEstatus(categoria,
+    // "PRESELECCION"), que el backend ya no acepta.
+    const iniciarPreseleccionCategoria = async (categoria: Categoria) => {
+        setError(null);
+        const resultado = await iniciarPreseleccion(categoria);
+        if (!resultado.ok) {
+            setError(resultado.error);
+            return;
+        }
+        cargarCategorias();
+    };
+
     // Antes había que enfocar la categoría en Control de pantallas Y
     // seleccionarla aquí para trabajarla — dos pasos para lo mismo. Ahora,
     // elegir una categoría aquí también la enfoca en la pantalla pública de
@@ -191,11 +214,26 @@ function CompetenciaContenido() {
                             )}
                         </button>
 
+                        {c.estatus === "NO_INICIADA" && (
+                            <button
+                                type="button"
+                                onClick={() => iniciarPreseleccionCategoria(c.categoria)}
+                                className="rounded-md border border-boss-border px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-white transition-colors hover:border-boss-red hover:text-boss-red"
+                            >
+                                Iniciar preselección
+                            </button>
+                        )}
+
                         <select
                             value={c.estatus}
                             onChange={(e) => cambiarEstatus(c.categoria, e.target.value as EstatusCompetencia)}
                             className="rounded-md border border-boss-border bg-boss-black px-2 py-1.5 text-sm text-foreground"
                         >
+                            {!ESTATUS_CATEGORIA_OPCIONES.includes(c.estatus) && (
+                                <option value={c.estatus} disabled>
+                                    {ESTATUS_CATEGORIA_LABEL[c.estatus]}
+                                </option>
+                            )}
                             {ESTATUS_CATEGORIA_OPCIONES.map((estatus) => (
                                 <option key={estatus} value={estatus}>
                                     {ESTATUS_CATEGORIA_LABEL[estatus]}
@@ -207,47 +245,49 @@ function CompetenciaContenido() {
             </div>
 
             {categoriaSeleccionada &&
-                (categorias?.find((c) => c.categoria === categoriaSeleccionada)?.estatus === "PRESELECCION" ? (
-                    <PanelPreseleccion categoria={categoriaSeleccionada} />
-                ) : (
-                    <PanelEnfrentamientos categoria={categoriaSeleccionada} />
-                ))}
+                (() => {
+                    const estatusSeleccionada = categorias?.find((c) => c.categoria === categoriaSeleccionada)?.estatus;
+                    return estatusSeleccionada === "PRESELECCION" || estatusSeleccionada === "REPECHAJE_DESEMPATE" ? (
+                        <PanelPreseleccion categoria={categoriaSeleccionada} estatus={estatusSeleccionada} />
+                    ) : (
+                        <PanelEnfrentamientos categoria={categoriaSeleccionada} />
+                    );
+                })()}
         </div>
     );
 }
 
-// Ranking en vivo de la fase de Preselección: cada juez puntúa individualmente
-// a cada competidor pagado (ver admin/jueceo); acá el admin ve el avance y,
-// cuando todos ya calificaron a todos, corta el Top N automático (potencia de
-// 2 más grande que no exceda el total calificado) con un clic.
-function PanelPreseleccion({ categoria }: { categoria: Categoria }) {
-    const [participantes, setParticipantes] = useState<ParticipantePreseleccion[] | null>(null);
-    const [juecesActivos, setJuecesActivos] = useState(0);
-    const [turno, setTurno] = useState<TurnoPreseleccion>(null);
-    const [avanzando, setAvanzando] = useState(false);
+// Ranking combinado en vivo de la fase de Preselección: cada juez puntúa
+// individualmente a cada competidor pagado DENTRO DE SU PROPIO ESCENARIO (ver
+// admin/jueceo y Preselección Paralela Multiescenario) — acá el admin ve un
+// sub-panel de turno por cada escenario activo, más el ranking combinado de
+// toda la categoría, y cuando todos ya calificaron corta el Top N automático
+// (potencia de 2 más grande que no exceda el total calificado) con un clic.
+// Si hay un empate exacto en la frontera de corte, el backend ya lanza solo
+// la ronda extra de repechaje — no hay ninguna selección manual que hacer
+// acá, solo informar quiénes van a repetir presentación.
+function PanelPreseleccion({ categoria, estatus }: { categoria: Categoria; estatus: EstatusCompetencia }) {
+    const [escenarios, setEscenarios] = useState<{ id: string; nombre: string; orden: number }[] | null>(null);
+    const [resultados, setResultados] = useState<ResultadoPreseleccionItem[] | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [generando, setGenerando] = useState(false);
-    const [empate, setEmpate] = useState<{ cortePosicion: number; cuposLibres: number; empatados: ParticipanteEmpatado[] } | null>(
-        null,
-    );
-    const [elegidos, setElegidos] = useState<Set<string>>(new Set());
+    const [empatados, setEmpatados] = useState<ParticipanteEmpatado[] | null>(null);
 
     useEffect(() => {
         let cancelado = false;
         const poll = async () => {
-            const [resParticipantes, resTurno] = await Promise.all([
-                getParticipantesPreseleccion(categoria),
-                getTurnoPreseleccionActual(categoria),
+            const [resEscenarios, resResultados] = await Promise.all([
+                getEscenariosDeCategoria(categoria),
+                getResultadosPreseleccion(categoria),
             ]);
             if (cancelado) return;
-            if (resParticipantes.ok) {
-                setParticipantes(resParticipantes.data.participantes);
-                setJuecesActivos(resParticipantes.data.juecesActivos);
+            if (resEscenarios.ok) setEscenarios(resEscenarios.data.escenarios);
+            if (resResultados.ok) {
+                setResultados(resResultados.data.resultados);
                 setError(null);
             } else {
-                setError(resParticipantes.error);
+                setError(resResultados.error);
             }
-            if (resTurno.ok) setTurno(resTurno.data.turno);
         };
         poll();
         const id = setInterval(poll, 4000);
@@ -255,86 +295,56 @@ function PanelPreseleccion({ categoria }: { categoria: Categoria }) {
             cancelado = true;
             clearInterval(id);
         };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [categoria]);
 
-    const avanzarTurno = async () => {
-        setAvanzando(true);
-        setError(null);
-        const resultado = await siguienteTurnoPreseleccion(categoria);
-        setAvanzando(false);
-        if (!resultado.ok) {
-            setError(resultado.error);
-            return;
-        }
-        setTurno(resultado.data.turno);
-    };
+    const ordenados = [...(resultados ?? [])].sort((a, b) => (b.puntajeTotal ?? -1) - (a.puntajeTotal ?? -1));
+    const faltanPorCalificar = ordenados.filter((p) => !p.completo);
+    const listoParaGenerar = resultados !== null && resultados.length >= 4 && faltanPorCalificar.length === 0;
 
-    const ordenados = [...(participantes ?? [])].sort((a, b) => (b.puntajeTotal ?? -1) - (a.puntajeTotal ?? -1));
-    const faltanPorCalificar = ordenados.filter((p) => p.calificacionesRecibidas < juecesActivos);
-    const listoParaGenerar = participantes !== null && participantes.length >= 4 && faltanPorCalificar.length === 0;
-
-    const generar = async (desempatePreseleccionIds?: string[]) => {
+    const generar = async () => {
         setGenerando(true);
         setError(null);
-        const resultado = await generarTopBracket(categoria, desempatePreseleccionIds);
+        setEmpatados(null);
+        const resultado = await generarTopBracket(categoria);
         setGenerando(false);
 
-        if (resultado.ok) {
-            setEmpate(null);
-            return;
-        }
-        if (resultado.motivo === "EMPATE_EN_CORTE") {
-            setEmpate(resultado);
-            setElegidos(new Set());
+        if (resultado.ok) return;
+        if (resultado.motivo === "REPECHAJE_DESEMPATE") {
+            setEmpatados(resultado.empatados);
             return;
         }
         setError(resultado.error);
     };
 
-    const toggleElegido = (id: string) => {
-        setElegidos((prev) => {
-            const next = new Set(prev);
-            if (next.has(id)) next.delete(id);
-            else next.add(id);
-            return next;
-        });
-    };
-
     return (
         <div className="mt-6 rounded-lg border border-boss-border bg-boss-panel/60 p-5">
             <h2 className="font-display text-lg uppercase tracking-wide text-white">
-                Preselección — {CATEGORIAS[categoria]}
+                {estatus === "REPECHAJE_DESEMPATE" ? "Repechaje de desempate — " : "Preselección — "}
+                {CATEGORIAS[categoria]}
             </h2>
             <p className="mt-1 text-sm text-boss-gray">
-                Cada juez puntúa individualmente a cada competidor pagado. El corte automático toma la potencia de 2 más
-                grande (4/8/16/32/64) que no exceda el total calificado, con seeding: mejor puntaje contra peor puntaje.
+                {estatus === "REPECHAJE_DESEMPATE"
+                    ? "Hay un empate exacto en la frontera del corte. Los competidores empatados vuelven a presentarse, uno a uno, en su mismo escenario de origen — se resuelve solo en cuanto los jueces de ese escenario terminen de recalificarlos, sin necesidad de ninguna acción manual."
+                    : "Cada juez puntúa individualmente a cada competidor pagado, dentro de su propio escenario. El corte automático toma la potencia de 2 más grande (4/8/16/32/64) que no exceda el total calificado, con seeding: mejor puntaje contra peor puntaje."}
             </p>
-
-            <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-md border border-boss-border bg-boss-black/40 p-3">
-                <div>
-                    <p className="text-xs font-semibold uppercase tracking-widest text-boss-gray">En tarima ahora</p>
-                    <p className="font-display text-lg uppercase text-white">
-                        {turno?.participante
-                            ? turno.participante.nombreArtistico || `${turno.participante.nombres} ${turno.participante.apellidos}`
-                            : "— nadie —"}
-                    </p>
-                </div>
-                <button
-                    type="button"
-                    onClick={avanzarTurno}
-                    disabled={avanzando}
-                    className="rounded-md bg-boss-red px-4 py-2 text-xs font-semibold uppercase tracking-wide text-white transition-colors hover:bg-boss-red-dark disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                    {avanzando ? "..." : "Siguiente"}
-                </button>
-            </div>
 
             {error && <p className="mt-3 text-sm font-medium text-red-400">{error}</p>}
 
-            {participantes === null && <p className="mt-4 text-boss-gray">Cargando...</p>}
+            {escenarios === null && <p className="mt-4 text-boss-gray">Cargando escenarios...</p>}
+            {escenarios !== null && escenarios.length === 0 && (
+                <p className="mt-4 text-boss-gray">Esta categoría todavía no tiene escenarios asignados.</p>
+            )}
 
-            {participantes !== null && (
-                <div className="mt-4 space-y-1.5">
+            <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                {escenarios?.map((esc) => (
+                    <TurnoEscenarioPanel key={esc.id} categoria={categoria} escenarioId={esc.id} escenarioNombre={esc.nombre} />
+                ))}
+            </div>
+
+            {resultados !== null && (
+                <div className="mt-6 space-y-1.5">
+                    <p className="text-xs font-semibold uppercase tracking-widest text-boss-gray">Ranking combinado</p>
                     {ordenados.length === 0 && (
                         <p className="text-boss-gray">No hay competidores con pago confirmado en esta categoría.</p>
                     )}
@@ -346,54 +356,117 @@ function PanelPreseleccion({ categoria }: { categoria: Categoria }) {
                             <span className="text-white">
                                 <span className="mr-2 text-boss-gray">#{i + 1}</span>
                                 {p.nombreArtistico || `${p.nombres} ${p.apellidos}`}
+                                <span className="ml-2 text-xs text-boss-gray">({p.escenarioNombre ?? "sin escenario"})</span>
+                                {p.numeroDesempate > 0 && (
+                                    <span className="ml-2 rounded-full bg-yellow-500/15 px-2 py-0.5 text-[11px] normal-case text-yellow-400">
+                                        Repechaje {p.numeroDesempate}
+                                    </span>
+                                )}
                             </span>
-                            <span className={p.calificacionesRecibidas < juecesActivos ? "text-boss-gray" : "text-boss-green"}>
-                                {p.puntajeTotal ?? "—"} pts · {p.calificacionesRecibidas}/{juecesActivos} jueces
+                            <span className={p.completo ? "text-boss-green" : "text-boss-gray"}>
+                                {p.puntajeTotal ?? "—"} pts · {p.calificacionesRecibidas}/{p.juecesActivos} jueces
                             </span>
                         </div>
                     ))}
                 </div>
             )}
 
-            {empate && (
-                <div className="mt-5 rounded-md border border-boss-red/40 bg-boss-red/5 p-4">
-                    <p className="text-sm font-medium text-white">
-                        Empate en el puesto {empate.cortePosicion}: elige {empate.cuposLibres} de estos {empate.empatados.length}{" "}
-                        competidores para que avancen al bracket.
+            {empatados && (
+                <div className="mt-5 rounded-md border border-yellow-500/40 bg-yellow-950/20 p-4">
+                    <p className="text-sm font-medium text-yellow-300">
+                        Empate exacto en la frontera de corte — se lanzó automáticamente una ronda extra para:
                     </p>
-                    <div className="mt-3 space-y-2">
-                        {empate.empatados.map((e) => (
-                            <label key={e.id} className="flex items-center gap-2 text-sm text-white">
-                                <input type="checkbox" checked={elegidos.has(e.id)} onChange={() => toggleElegido(e.id)} />
+                    <ul className="mt-2 list-disc pl-5 text-sm text-white">
+                        {empatados.map((e) => (
+                            <li key={e.id}>
                                 {e.nombre} — {e.puntajeTotal} pts
-                            </label>
+                            </li>
                         ))}
-                    </div>
-                    <button
-                        type="button"
-                        onClick={() => generar(Array.from(elegidos))}
-                        disabled={generando || elegidos.size !== empate.cuposLibres}
-                        className="mt-3 rounded-md bg-boss-red px-3 py-2 text-xs font-semibold uppercase tracking-wide text-white transition-colors hover:bg-boss-red-dark disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                        Confirmar y generar bracket
-                    </button>
+                    </ul>
+                    <p className="mt-2 text-xs text-boss-gray">
+                        Se resuelve solo en cuanto los jueces de su escenario los recalifiquen — no hace falta que hagas
+                        nada más aquí.
+                    </p>
                 </div>
             )}
 
-            {!empate && (
+            <button
+                type="button"
+                onClick={generar}
+                disabled={generando || !listoParaGenerar}
+                className="mt-5 w-full rounded-md bg-boss-red px-4 py-3 font-display text-lg uppercase tracking-wider text-white transition-colors hover:bg-boss-red-dark disabled:cursor-not-allowed disabled:opacity-50"
+            >
+                {generando
+                    ? "Generando..."
+                    : faltanPorCalificar.length > 0
+                      ? `Faltan ${faltanPorCalificar.length} por calificar`
+                      : "Generar Top Bracket"}
+            </button>
+        </div>
+    );
+}
+
+// Un sub-panel de turno por escenario activo: quién está en tarima ahora
+// mismo en ESE escenario, con su propio botón "Siguiente" (misma cola
+// independiente, ver Preselección Paralela Multiescenario).
+function TurnoEscenarioPanel({
+    categoria,
+    escenarioId,
+    escenarioNombre,
+}: {
+    categoria: Categoria;
+    escenarioId: string;
+    escenarioNombre: string;
+}) {
+    const [turno, setTurno] = useState<TurnoPreseleccion>(null);
+    const [avanzando, setAvanzando] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    useEffect(() => {
+        let cancelado = false;
+        const poll = async () => {
+            const resTurno = await getTurnoPreseleccionActual(categoria, escenarioId);
+            if (!cancelado && resTurno.ok) setTurno(resTurno.data.turno);
+        };
+        poll();
+        const id = setInterval(poll, 4000);
+        return () => {
+            cancelado = true;
+            clearInterval(id);
+        };
+    }, [categoria, escenarioId]);
+
+    const avanzarTurno = async () => {
+        setAvanzando(true);
+        setError(null);
+        const resultado = await siguienteTurnoPreseleccion(categoria, escenarioId);
+        setAvanzando(false);
+        if (!resultado.ok) {
+            setError(resultado.error);
+            return;
+        }
+        setTurno(resultado.data.turno);
+    };
+
+    return (
+        <div className="rounded-md border border-boss-border bg-boss-black/40 p-3">
+            <p className="text-xs font-semibold uppercase tracking-widest text-boss-gray">{escenarioNombre}</p>
+            <div className="mt-1 flex flex-wrap items-center justify-between gap-3">
+                <p className="font-display text-lg uppercase text-white">
+                    {turno?.participante
+                        ? turno.participante.nombreArtistico || `${turno.participante.nombres} ${turno.participante.apellidos}`
+                        : "— nadie —"}
+                </p>
                 <button
                     type="button"
-                    onClick={() => generar()}
-                    disabled={generando || !listoParaGenerar}
-                    className="mt-5 w-full rounded-md bg-boss-red px-4 py-3 font-display text-lg uppercase tracking-wider text-white transition-colors hover:bg-boss-red-dark disabled:cursor-not-allowed disabled:opacity-50"
+                    onClick={avanzarTurno}
+                    disabled={avanzando}
+                    className="rounded-md bg-boss-red px-4 py-2 text-xs font-semibold uppercase tracking-wide text-white transition-colors hover:bg-boss-red-dark disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                    {generando
-                        ? "Generando..."
-                        : faltanPorCalificar.length > 0
-                          ? `Faltan ${faltanPorCalificar.length} por calificar`
-                          : "Generar Top Bracket"}
+                    {avanzando ? "..." : "Siguiente"}
                 </button>
-            )}
+            </div>
+            {error && <p className="mt-2 text-xs font-medium text-red-400">{error}</p>}
         </div>
     );
 }
