@@ -5,12 +5,14 @@ import { useSearchParams } from "next/navigation";
 import Image from "next/image";
 import { CATEGORIAS, type Categoria } from "@/config/catalog";
 import {
+    getCategoriasEstado,
     getEnfrentamientos,
     getEscenariosDeCategoria,
     getPantallaEstado,
     getResultadosPreseleccion,
     getTurnoPreseleccionActual,
     type Enfrentamiento,
+    type EstatusCompetencia,
     type PantallaEstado,
     type ResultadoPreseleccionItem,
     type TurnoPreseleccion,
@@ -86,6 +88,7 @@ function PantallaPublicaContenido() {
     const [resultadosPreseleccion, setResultadosPreseleccion] = useState<ResultadoPreseleccionItem[]>([]);
     const [escenariosCategoria, setEscenariosCategoria] = useState<{ id: string; nombre: string }[]>([]);
     const [turnosPorEscenario, setTurnosPorEscenario] = useState<Record<string, TurnoPreseleccion>>({});
+    const [estatusPorCategoria, setEstatusPorCategoria] = useState<Record<string, EstatusCompetencia>>({});
     const escenarioId = useEscenarioEfectivo(estado?.categoriaEnfocada);
 
     useEffect(() => {
@@ -93,6 +96,29 @@ function PantallaPublicaContenido() {
         const poll = async () => {
             const resultado = await getPantallaEstado();
             if (!cancelado && resultado.ok) setEstado(resultado.data.estado);
+        };
+        poll();
+        const id = setInterval(poll, INTERVALO_MS);
+        return () => {
+            cancelado = true;
+            clearInterval(id);
+        };
+    }, []);
+
+    // Estatus de cada categoría — se usa para que el recorrido de resultados
+    // de Preselección (ver useRecapPreseleccion) deje de ser elegible en
+    // cuanto la categoría avanza a bracket/campeón, aunque la pantalla se
+    // recargue después (lo que resetea el "ya se mostró" en memoria del
+    // hook): sin este chequeo, recargar /pantalla con una categoría ya
+    // finalizada hacía que el recorrido se repitiera desde cero, encima de
+    // Brackets/Ganadores.
+    useEffect(() => {
+        let cancelado = false;
+        const poll = async () => {
+            const resultado = await getCategoriasEstado();
+            if (!cancelado && resultado.ok) {
+                setEstatusPorCategoria(Object.fromEntries(resultado.data.categorias.map((c) => [c.categoria, c.estatus])));
+            }
         };
         poll();
         const id = setInterval(poll, INTERVALO_MS);
@@ -244,7 +270,19 @@ function PantallaPublicaContenido() {
         .filter((e): e is { escenarioId: string; escenarioNombre: string; turno: NonNullable<TurnoPreseleccion> } => e.turno !== null);
 
     const hayTurnoActivo = escenarioParam ? !!turnoPreseleccion : entradasActivas.length > 0;
-    const recapPreseleccion = useRecapPreseleccion(estado?.categoriaEnfocada ?? null, hayTurnoActivo, resultadosPreseleccion);
+    // El recorrido de resultados solo es elegible mientras la categoría
+    // sigue en Preselección/Repechaje — una vez que pasa a bracket o
+    // finaliza, dejar de ofrecerlo evita que una recarga de /pantalla lo
+    // reproduzca de nuevo por encima de Brackets/Ganadores (ver el poll de
+    // estatusPorCategoria arriba).
+    const estatusCategoriaEnfocada = estado?.categoriaEnfocada ? estatusPorCategoria[estado.categoriaEnfocada] : undefined;
+    const permitirRecap = estatusCategoriaEnfocada === "PRESELECCION" || estatusCategoriaEnfocada === "REPECHAJE_DESEMPATE";
+    const recapPreseleccion = useRecapPreseleccion(
+        estado?.categoriaEnfocada ?? null,
+        hayTurnoActivo,
+        permitirRecap,
+        resultadosPreseleccion,
+    );
 
     // En la práctica nunca se solapan (una categoría está en un solo estatus
     // a la vez: PRESELECCION o EN_CURSO), pero por robustez la secuencia de

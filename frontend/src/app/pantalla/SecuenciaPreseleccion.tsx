@@ -319,10 +319,16 @@ export type EstadoRecapPreseleccion = {
 // público ve a todos los que pasaron antes de que el admin muestre el
 // bracket. `mostradosRef` evita que se repita en cada poll mientras la
 // categoría se queda en ese estado (puede ser mucho rato, hasta que el admin
-// genere el Top Bracket).
+// genere el Top Bracket) — pero es memoria del componente, se pierde si la
+// pantalla se recarga. `permitirRecap` (true solo mientras la categoría
+// sigue en PRESELECCION/REPECHAJE_DESEMPATE) es la guarda que de verdad
+// importa: sin ella, recargar /pantalla con una categoría que ya pasó a
+// bracket o ya finalizó hacía que el recorrido se repitiera desde cero, por
+// encima de Brackets/Ganadores.
 export function useRecapPreseleccion(
     categoria: Categoria | null,
     hayTurnoActivo: boolean,
+    permitirRecap: boolean,
     resultados: ResultadoPreseleccionItem[],
 ): EstadoRecapPreseleccion {
     const [indice, setIndice] = useState<number | null>(null);
@@ -332,11 +338,20 @@ export function useRecapPreseleccion(
     const listos = resultados.length > 0 && resultados.every((r) => r.completo);
 
     useEffect(() => {
-        if (!categoria || hayTurnoActivo || !listos) return;
+        if (!categoria || hayTurnoActivo || !listos || !permitirRecap) return;
         if (mostradosRef.current.has(categoria)) return;
         setIndice(0);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [categoria, hayTurnoActivo, listos]);
+    }, [categoria, hayTurnoActivo, listos, permitirRecap]);
+
+    // Si el admin genera el Top Bracket mientras el recorrido ya está en
+    // curso, lo corta de inmediato en vez de dejarlo terminar — la categoría
+    // ya pasó a bracket, seguir mostrando el recorrido se vería desfasado.
+    useEffect(() => {
+        if (indice === null || permitirRecap) return;
+        if (timeoutRef.current) clearTimeout(timeoutRef.current);
+        setIndice(null);
+    }, [permitirRecap, indice]);
 
     useEffect(() => {
         if (indice === null) return;
