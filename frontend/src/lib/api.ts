@@ -21,11 +21,6 @@ async function parseJsonSafely(response: Response): Promise<unknown> {
 export async function postRegistration(
     payload: RegistrationPayload,
 ): Promise<ApiResult<{ checkoutUrl: string }>> {
-    if (!API_URL) {
-        console.error("NEXT_PUBLIC_API_URL no está configurada");
-        return { ok: false, error: "El servidor no está disponible en este momento." };
-    }
-
     try {
         const response = await fetch(`${API_URL}/api/registrations`, {
             method: "POST",
@@ -67,11 +62,6 @@ export type RegistrationPruebaConfirmacion = {
 export async function postRegistrationPrueba(
     payload: RegistrationPayload,
 ): Promise<ApiResult<RegistrationPruebaConfirmacion>> {
-    if (!API_URL) {
-        console.error("NEXT_PUBLIC_API_URL no está configurada");
-        return { ok: false, error: "El servidor no está disponible en este momento." };
-    }
-
     try {
         const response = await fetch(`${API_URL}/api/registrations-prueba`, {
             method: "POST",
@@ -94,11 +84,6 @@ export async function postRegistrationPrueba(
 export type PreventaEstado = { activa: boolean; lugaresRestantes: number };
 
 export async function getPreventaEstado(): Promise<PreventaEstado> {
-    if (!API_URL) {
-        console.error("NEXT_PUBLIC_API_URL no está configurada");
-        return { activa: false, lugaresRestantes: 0 };
-    }
-
     try {
         const response = await fetch(`${API_URL}/api/registrations/preventa-estado`);
         const data = (await parseJsonSafely(response)) as Partial<PreventaEstado> | null;
@@ -128,11 +113,6 @@ export type RegistrationBySession = {
 };
 
 export async function getRegistrationBySession(sessionId: string): Promise<ApiResult<RegistrationBySession>> {
-    if (!API_URL) {
-        console.error("NEXT_PUBLIC_API_URL no está configurada");
-        return { ok: false, error: "El servidor no está disponible en este momento." };
-    }
-
     try {
         const response = await fetch(`${API_URL}/api/registrations/by-session/${sessionId}`);
         const data = (await parseJsonSafely(response)) as RegistrationBySession | null;
@@ -180,11 +160,6 @@ export type VistaRegistros = {
 };
 
 export async function getVistaRegistros(token: string): Promise<ApiResult<VistaRegistros>> {
-    if (!API_URL) {
-        console.error("NEXT_PUBLIC_API_URL no está configurada");
-        return { ok: false, error: "El servidor no está disponible en este momento." };
-    }
-
     try {
         const response = await fetch(`${API_URL}/api/vista-registros?token=${encodeURIComponent(token)}`);
         const data = (await parseJsonSafely(response)) as (VistaRegistros & { error?: string }) | null;

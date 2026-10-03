@@ -131,11 +131,6 @@ async function parseJsonSafely(response: Response): Promise<unknown> {
 }
 
 async function adminFetch<T>(path: string, init?: RequestInit): Promise<ApiResult<T>> {
-    if (!API_URL) {
-        console.error("NEXT_PUBLIC_API_URL no está configurada");
-        return { ok: false, error: "El servidor no está disponible en este momento." };
-    }
-
     try {
         const response = await fetch(`${API_URL}${path}`, {
             credentials: "include",
@@ -428,11 +423,6 @@ export type GenerarTopBracketResultado =
 // el 409 (faltantes) traen cuerpos con detalle que necesita el panel de
 // admin, y adminFetch descarta todo salvo `error` en las respuestas no-ok.
 export async function generarTopBracket(categoria: Categoria): Promise<GenerarTopBracketResultado> {
-    if (!API_URL) {
-        console.error("NEXT_PUBLIC_API_URL no está configurada");
-        return { ok: false, motivo: "ERROR", error: "El servidor no está disponible en este momento." };
-    }
-
     try {
         const response = await fetch(`${API_URL}/api/competencia/categorias/${categoria}/generar-top-bracket`, {
             method: "POST",
@@ -558,11 +548,6 @@ export function patchPantallaEstado(data: { vista: VistaPantalla; categoriaEnfoc
 export async function verificarAcceso(
     qrToken: string,
 ): Promise<{ ok: true; data: AccessVerifyResult } | { ok: false; error: string }> {
-    if (!API_URL) {
-        console.error("NEXT_PUBLIC_API_URL no está configurada");
-        return { ok: false, error: "El servidor no está disponible en este momento." };
-    }
-
     try {
         const response = await fetch(`${API_URL}/api/access/verify`, {
             method: "POST",
