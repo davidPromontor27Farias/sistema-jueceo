@@ -19,6 +19,8 @@ import {
     type ResultadoCalificacion,
     type TurnoPreseleccion,
 } from "@/lib/adminApi";
+import { calcularLimites, DURACION_TURNO_MS } from "../../../pantalla/SecuenciaBatalla";
+import { DURACION_PRESENTACION_PRESELECCION_MS } from "../../../pantalla/SecuenciaPreseleccion";
 
 // Los 5 criterios del reglamento (Artículo 35), 20% cada uno, escala 1-5.
 const CRITERIOS_BASE = ["tecnica", "ejecucion", "vocabulario", "musicalidad", "originalidad"] as const;
@@ -214,7 +216,12 @@ function PreseleccionCategoria({ categoria, escenarioId }: { categoria: Categori
             )}
 
             {enTarima && !enTarima.yaCalifique && (
-                <FormularioPreseleccion key={enTarima.id} participante={enTarima} onCalificado={cargar} />
+                <FormularioPreseleccion
+                    key={enTarima.id}
+                    participante={enTarima}
+                    iniciadoEn={turno!.iniciadoEn}
+                    onCalificado={cargar}
+                />
             )}
         </div>
     );
@@ -230,14 +237,26 @@ function nombreParticipante(p: ParticipantePreseleccion): string {
 // puede reintentar sin perder nada más.
 function FormularioPreseleccion({
     participante,
+    iniciadoEn,
     onCalificado,
 }: {
     participante: ParticipantePreseleccion;
+    iniciadoEn: string;
     onCalificado: () => void;
 }) {
     const [puntajes, setPuntajes] = useState<PuntajesPreseleccion>(PUNTAJES_PRESELECCION_INICIALES);
     const [enviando, setEnviando] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [ahora, setAhora] = useState(() => Date.now());
+
+    // El botón de enviar se habilita hasta que termina el turno del
+    // competidor (presentación + 1 minuto en tarima) — las estrellas sí se
+    // pueden ir marcando desde antes, solo el envío espera.
+    useEffect(() => {
+        const id = setInterval(() => setAhora(Date.now()), 500);
+        return () => clearInterval(id);
+    }, []);
+    const presentacionTerminada = ahora - new Date(iniciadoEn).getTime() >= DURACION_PRESENTACION_PRESELECCION_MS + DURACION_TURNO_MS;
 
     const setValor = (campo: keyof PuntajesPreseleccion, valor: number) => {
         setPuntajes((prev) => ({ ...prev, [campo]: valor }));
@@ -273,7 +292,10 @@ function FormularioPreseleccion({
                 ))}
             </div>
 
-            {!todosCalificados && (
+            {!presentacionTerminada && (
+                <p className="mt-3 text-center text-sm text-boss-gray">Espera a que termine la presentación para poder enviar.</p>
+            )}
+            {presentacionTerminada && !todosCalificados && (
                 <p className="mt-3 text-center text-sm text-boss-gray">
                     Selecciona una calificación de 1 a 5 estrellas en cada criterio para poder enviar.
                 </p>
@@ -282,7 +304,7 @@ function FormularioPreseleccion({
             <button
                 type="button"
                 onClick={enviar}
-                disabled={enviando || !todosCalificados}
+                disabled={enviando || !todosCalificados || !presentacionTerminada}
                 className="mt-4 w-full rounded-md bg-boss-red px-4 py-3 font-display text-lg uppercase tracking-wider text-white transition-colors hover:bg-boss-red-dark disabled:cursor-not-allowed disabled:opacity-50"
             >
                 {enviando ? "Guardando..." : "Guardar y siguiente"}
@@ -307,6 +329,17 @@ function FormularioCalificacion({
     const [enviando, setEnviando] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [resultado, setResultado] = useState<ResultadoCalificacion | null>(null);
+    const [ahora, setAhora] = useState(() => Date.now());
+
+    // Igual que en Preselección: el envío espera a que AMBOS competidores
+    // (A y B) terminen su turno en tarima — las estrellas se pueden ir
+    // marcando desde antes.
+    useEffect(() => {
+        const id = setInterval(() => setAhora(Date.now()), 500);
+        return () => clearInterval(id);
+    }, []);
+    const { finTurnoB } = calcularLimites(enfrentamiento);
+    const presentacionTerminada = ahora - new Date(enfrentamiento.updatedAt).getTime() >= finTurnoB;
 
     const setValor = (campo: keyof PuntajesCalificacion, valor: number) => {
         setPuntajes((prev) => ({ ...prev, [campo]: valor }));
@@ -369,7 +402,10 @@ function FormularioCalificacion({
                 />
             </div>
 
-            {!todosCalificados && (
+            {!presentacionTerminada && (
+                <p className="mt-3 text-center text-sm text-boss-gray">Espera a que termine la presentación para poder enviar.</p>
+            )}
+            {presentacionTerminada && !todosCalificados && (
                 <p className="mt-3 text-center text-sm text-boss-gray">
                     Selecciona una calificación de 1 a 5 estrellas en cada criterio para poder enviar.
                 </p>
@@ -378,7 +414,7 @@ function FormularioCalificacion({
             <button
                 type="button"
                 onClick={enviar}
-                disabled={enviando || !todosCalificados}
+                disabled={enviando || !todosCalificados || !presentacionTerminada}
                 className="mt-5 w-full rounded-md bg-boss-red px-4 py-3 font-display text-lg uppercase tracking-wider text-white transition-colors hover:bg-boss-red-dark disabled:cursor-not-allowed disabled:opacity-50"
             >
                 {enviando ? "Enviando..." : "Enviar calificación"}

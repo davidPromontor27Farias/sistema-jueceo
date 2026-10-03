@@ -9,9 +9,9 @@ import { BracketMirror } from "./BracketMirror";
 const DURACION_ANUNCIO_VS_MS = 5_000;
 // Reusadas también por la secuencia de Preselección (turno individual), ver
 // frontend/src/app/pantalla/SecuenciaPreseleccion.tsx: mismos 8s de
-// presentación y 30s de turno, una sola fuente de verdad para ambos tiempos.
+// presentación y 1 minuto de turno, una sola fuente de verdad para ambos tiempos.
 export const DURACION_PRESENTACION_MS = 8_000;
-export const DURACION_TURNO_MS = 30_000;
+export const DURACION_TURNO_MS = 60_000;
 const DURACION_RESULTADOS_MS = 7_000;
 const DURACION_GANADOR_MS = 10_000;
 const DURACION_BRACKET_MS = 8_000;
@@ -47,7 +47,7 @@ function nombreCompetidor(c: Enfrentamiento["competidorA"]): string {
 // cortó un turno (ver POST /enfrentamientos/:id/cortar-turno), ese corte
 // reemplaza la duración fija del turno para todo lo que viene después —
 // el competidor B no espera a que se agote el minuto completo de A.
-function calcularLimites(enf: Enfrentamiento) {
+export function calcularLimites(enf: Enfrentamiento) {
     const inicio = new Date(enf.updatedAt).getTime();
     const finAnuncio = DURACION_ANUNCIO_VS_MS;
     const finPresentacionA = finAnuncio + DURACION_PRESENTACION_MS;

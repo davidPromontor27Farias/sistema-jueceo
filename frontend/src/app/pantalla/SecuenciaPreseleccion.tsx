@@ -8,7 +8,7 @@ import { ChispasFondo, DesgloseCompetidor, DURACION_TURNO_MS, FotoCompetidorVs }
 
 // "Le toca a..." antes de arrancar el conteo de un turno de Preselección —
 // distinto del DURACION_PRESENTACION_MS de las batallas 1v1 (8s), acá son 7s.
-const DURACION_PRESENTACION_PRESELECCION_MS = 7_000;
+export const DURACION_PRESENTACION_PRESELECCION_MS = 7_000;
 
 // Cuánto se muestra cada participante en el recorrido de resultados (ver
 // useRecapPreseleccion) una vez que se acabó la fila de turnos.
@@ -208,6 +208,104 @@ export function SecuenciaPreseleccionOverlay({ fase, turno, segundosRestantes }:
     );
 }
 
+// Una columna de la pantalla dividida: corre su PROPIA instancia de
+// useSecuenciaPreseleccion (presentando -> turno -> calificando ->
+// resultados), igual que la pantalla de un solo escenario, pero en una
+// franja angosta en vez de a pantalla completa. El padre
+// (SecuenciaPreseleccionMultiOverlay) ya filtró a solo escenarios con turno
+// activo — si de todas formas llega sin turno, no dibuja nada (misma guarda
+// que SecuenciaPreseleccionOverlay).
+function ColumnaEscenario({
+    escenarioNombre,
+    turno,
+}: {
+    escenarioNombre: string;
+    turno: TurnoPreseleccion;
+}) {
+    const secuencia = useSecuenciaPreseleccion(turno);
+    if (secuencia.fase === "normal" || !secuencia.turno) return null;
+
+    const { fase, turno: t, segundosRestantes } = secuencia;
+    const competidor = t.participante;
+    const nombre = competidor ? competidor.nombreArtistico || `${competidor.nombres} ${competidor.apellidos}` : "";
+
+    return (
+        <div className="relative h-full overflow-hidden border-l border-white/10 first:border-l-0">
+            {(fase === "presentando" || fase === "turno") && <div className="fondo-reflector-azul absolute inset-0" />}
+            {(fase === "calificando" || fase === "resultados") && <div className="fondo-vs-azul absolute inset-0" />}
+            <ChispasFondo />
+
+            <div className="relative z-10 flex h-full flex-col items-center justify-center gap-2 px-3 pt-16 text-center">
+                <span className="rounded-full border border-white/30 bg-black/40 px-3 py-1 font-display text-xs uppercase tracking-widest text-white">
+                    {escenarioNombre}
+                </span>
+
+                {fase === "presentando" && (
+                    <p className="font-display text-sm uppercase tracking-widest text-[color:var(--color-boss-blue)] sm:text-base">
+                        Le toca a...
+                    </p>
+                )}
+
+                <FotoCompetidorVs competidor={competidor} />
+
+                <p className="max-w-[92%] truncate font-display text-2xl uppercase text-white sm:text-4xl">{nombre}</p>
+
+                {fase === "turno" && (
+                    <p
+                        key={segundosRestantes}
+                        className="animate-numero-pop font-display text-4xl sm:text-5xl"
+                        style={{ color: "var(--color-boss-blue)", textShadow: "0 0 20px var(--color-boss-blue)" }}
+                    >
+                        {segundosRestantes}
+                    </p>
+                )}
+
+                {fase === "calificando" && (
+                    <p className="animate-pulso-suave font-display text-base uppercase italic text-white sm:text-xl">
+                        Calificando
+                    </p>
+                )}
+
+                {fase === "resultados" && t.desglose && (
+                    <DesgloseCompetidor desglose={t.desglose} puntaje={t.puntajeTotal ?? 0} color="var(--color-boss-blue)" />
+                )}
+            </div>
+        </div>
+    );
+}
+
+// Pantalla dividida según cuántos escenarios tienen a alguien en tarima
+// AHORA MISMO (uno hasta tres, o los que sean): 1 columna si solo queda un
+// escenario activo, 2 o 3 si varios están corriendo en simultáneo. El padre
+// (pantalla/page.tsx) ya filtró `entradas` a solo los escenarios con turno
+// activo, así que la cantidad de columnas se ajusta sola cuando algún
+// escenario termina su fila (esa columna simplemente deja de venir en la
+// lista y las demás se reacomodan).
+export function SecuenciaPreseleccionMultiOverlay({
+    categoria,
+    entradas,
+}: {
+    categoria: Categoria;
+    entradas: { escenarioId: string; escenarioNombre: string; turno: TurnoPreseleccion }[];
+}) {
+    if (entradas.length === 0) return null;
+
+    const colsClase = entradas.length === 1 ? "grid-cols-1" : entradas.length === 2 ? "grid-cols-2" : "grid-cols-3";
+
+    return (
+        <main className="fixed inset-0 z-50 overflow-hidden bg-boss-black">
+            <p className="absolute inset-x-0 top-4 z-20 text-center font-display text-base uppercase tracking-widest text-boss-gray sm:text-lg">
+                {CATEGORIAS[categoria]} · Preselección
+            </p>
+            <div className={`grid h-full w-full ${colsClase}`}>
+                {entradas.map((e) => (
+                    <ColumnaEscenario key={e.escenarioId} escenarioNombre={e.escenarioNombre} turno={e.turno} />
+                ))}
+            </div>
+        </main>
+    );
+}
+
 export type EstadoRecapPreseleccion = {
     activo: boolean;
     participante: ResultadoPreseleccionItem | null;
@@ -224,7 +322,7 @@ export type EstadoRecapPreseleccion = {
 // genere el Top Bracket).
 export function useRecapPreseleccion(
     categoria: Categoria | null,
-    turno: TurnoPreseleccion,
+    hayTurnoActivo: boolean,
     resultados: ResultadoPreseleccionItem[],
 ): EstadoRecapPreseleccion {
     const [indice, setIndice] = useState<number | null>(null);
@@ -234,11 +332,11 @@ export function useRecapPreseleccion(
     const listos = resultados.length > 0 && resultados.every((r) => r.completo);
 
     useEffect(() => {
-        if (!categoria || turno || !listos) return;
+        if (!categoria || hayTurnoActivo || !listos) return;
         if (mostradosRef.current.has(categoria)) return;
         setIndice(0);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [categoria, turno, listos]);
+    }, [categoria, hayTurnoActivo, listos]);
 
     useEffect(() => {
         if (indice === null) return;

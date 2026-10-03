@@ -18,6 +18,10 @@ import { ModoPruebaBadge } from "../ModoPruebaBadge";
 
 const INTERVALO_MS = 3000;
 const MAXIMO_PROXIMAS = 5;
+// Más angosto que MAXIMO_PROXIMAS porque en Preselección cada escenario
+// comparte el ancho de la pantalla con hasta otros 2 (grid de 1/2/3
+// columnas, ver EntradaEscenarioPreseleccion más abajo).
+const MAXIMO_PROXIMAS_COLUMNA = 3;
 
 function nombreCompetidor(c: Enfrentamiento["competidorA"]): string {
     if (!c) return "Por definir";
@@ -28,9 +32,16 @@ function nombreParticipante(p: ProximoPreseleccionItem): string {
     return p.nombreArtistico || `${p.nombres} ${p.apellidos}`;
 }
 
+type EntradaEscenarioPreseleccion = {
+    escenarioId: string;
+    escenarioNombre: string;
+    turno: NonNullable<TurnoPreseleccion>;
+    proximos: ProximoPreseleccionItem[];
+};
+
 type DatosTablero =
     | { tipo: "batalla"; categoria: CategoriaEstado; enCurso: Enfrentamiento | null; proximas: Enfrentamiento[] }
-    | { tipo: "preseleccion"; categoria: CategoriaEstado; turno: NonNullable<TurnoPreseleccion>; proximos: ProximoPreseleccionItem[] };
+    | { tipo: "preseleccion"; categoria: CategoriaEstado; entradas: EntradaEscenarioPreseleccion[] };
 
 // Posiciones fijas (no aleatorias en cada render, para no reflowar) de las
 // chispas que flotan de fondo — mismo recurso visual que la pantalla de
@@ -76,10 +87,12 @@ function ChispasTablero() {
 // enfrentamiento con estatus EN_CURSO de verdad; si en este momento nadie
 // está peleando (entre batalla y batalla), se usa la categoría cuyo último
 // enfrentamiento se actualizó más recientemente — la que se estaba
-// trabajando hace un instante.
+// trabajando hace un instante. `ultimaActividad` se expone siempre (incluso
+// con batalla en curso) para poder compararla contra la actividad de
+// Preselección de otra categoría — ver el poll más abajo.
 function elegirCategoriaActiva(
     candidatas: { categoria: CategoriaEstado; enfrentamientos: Enfrentamiento[] }[],
-): { categoria: CategoriaEstado; enfrentamientos: Enfrentamiento[]; tieneBatallaEnCurso: boolean } | null {
+): { categoria: CategoriaEstado; enfrentamientos: Enfrentamiento[]; tieneBatallaEnCurso: boolean; ultimaActividad: number } | null {
     if (candidatas.length === 0) return null;
 
     const conBatallaEnCurso = candidatas
@@ -88,10 +101,9 @@ function elegirCategoriaActiva(
 
     if (conBatallaEnCurso.length > 0) {
         conBatallaEnCurso.sort((a, b) => new Date(b.enCurso.updatedAt).getTime() - new Date(a.enCurso.updatedAt).getTime());
-        return { ...conBatallaEnCurso[0]!.c, tieneBatallaEnCurso: true };
+        const elegida = conBatallaEnCurso[0]!;
+        return { ...elegida.c, tieneBatallaEnCurso: true, ultimaActividad: new Date(elegida.enCurso.updatedAt).getTime() };
     }
-
-    if (candidatas.length === 1) return { ...candidatas[0]!, tieneBatallaEnCurso: false };
 
     const conUltimaActividad = candidatas.map((c) => {
         const ultima = c.enfrentamientos.reduce(
@@ -101,7 +113,8 @@ function elegirCategoriaActiva(
         return { c, ultima };
     });
     conUltimaActividad.sort((a, b) => b.ultima - a.ultima);
-    return { ...conUltimaActividad[0]!.c, tieneBatallaEnCurso: false };
+    const elegida = conUltimaActividad[0]!;
+    return { ...elegida.c, tieneBatallaEnCurso: false, ultimaActividad: elegida.ultima };
 }
 
 // Pantalla independiente de "próxima batalla / próxima presentación"
@@ -110,11 +123,14 @@ function elegirCategoriaActiva(
 // en la base de datos, sin que el staff tenga que seleccionar nada. Muestra
 // SOLO una categoría a la vez, con esta prioridad:
 //   1. Una categoría con una batalla 1v1 en curso de verdad ahora mismo.
-//   2. Si ninguna: una categoría en Preselección con turno activo (alguien
-//      presentando su coreografía en solitario).
-//   3. Si ninguna de las anteriores: la categoría 1v1 con actividad más
-//      reciente (entre batalla y batalla).
-//   4. Si nada aplica: "Esperando la siguiente categoría...".
+//   2. Si ninguna: la actividad más reciente entre (a) una categoría en
+//      Preselección con turno activo y (b) una categoría EN_CURSO sin
+//      batalla activa todavía (recién se generó su bracket, nadie le ha
+//      dado "Iniciar batalla") — se compara por marca de tiempo, no se le
+//      da preferencia fija a Preselección: si una categoría acaba de pasar
+//      a brackets, eso es más reciente que una Preselección que ya llevaba
+//      rato corriendo en otra categoría, y debe ganarle.
+//   3. Si nada aplica: "Esperando la siguiente categoría...".
 export default function TableroPage() {
     return (
         <Suspense fallback={null}>
@@ -166,6 +182,14 @@ function TableroContenido() {
                 return;
             }
 
+            // Candidato de Preselección: se arma SIEMPRE que haya alguna
+            // categoría en Preselección/Repechaje con turno activo, pero
+            // todavía no se decide si se muestra — primero hay que
+            // compararlo contra `elegidaBatalla` (ver más abajo) para saber
+            // cuál de los dos tiene la actividad más reciente.
+            let datosPreseleccion: Extract<DatosTablero, { tipo: "preseleccion" }> | null = null;
+            let ultimaActividadPreseleccion = -1;
+
             if (enPreseleccion.length > 0) {
                 // Uno o varios escenarios por categoría: se junta (categoria,
                 // escenario) de todas las categorías en preselección/repechaje
@@ -179,37 +203,59 @@ function TableroContenido() {
                             const escenarios = escenarioParam
                                 ? resEscenarios.data.escenarios.filter((e) => e.id === escenarioParam)
                                 : resEscenarios.data.escenarios;
-                            return escenarios.map((escenario) => ({ categoria, escenarioId: escenario.id }));
+                            return escenarios.map((escenario) => ({ categoria, escenarioId: escenario.id, escenarioNombre: escenario.nombre }));
                         }),
                     )
                 ).flat();
                 if (cancelado) return;
 
                 const turnos = await Promise.all(
-                    paresCategoriaEscenario.map(async ({ categoria, escenarioId }) => {
+                    paresCategoriaEscenario.map(async ({ categoria, escenarioId, escenarioNombre }) => {
                         const resTurno = await getTurnoPreseleccionActual(categoria.categoria, escenarioId);
                         const turno = resTurno.ok ? resTurno.data.turno : null;
-                        return turno ? { categoria, escenarioId, turno } : null;
+                        return { categoria, escenarioId, escenarioNombre, turno };
                     }),
                 );
                 if (cancelado) return;
 
                 const activos = turnos.filter(
-                    (t): t is { categoria: CategoriaEstado; escenarioId: string; turno: NonNullable<TurnoPreseleccion> } => !!t,
+                    (t): t is { categoria: CategoriaEstado; escenarioId: string; escenarioNombre: string; turno: NonNullable<TurnoPreseleccion> } =>
+                        !!t.turno,
                 );
                 if (activos.length > 0) {
-                    activos.sort((a, b) => new Date(b.turno.iniciadoEn).getTime() - new Date(a.turno.iniciadoEn).getTime());
-                    const elegida = activos[0]!;
-                    const resProximos = await getProximosPreseleccion(elegida.categoria.categoria, elegida.escenarioId);
+                    // Elige la categoría con la actividad más reciente (mismo
+                    // criterio de siempre), y junta TODOS los escenarios
+                    // activos de ESA MISMA categoría — no se mezclan
+                    // escenarios de categorías distintas en un mismo grid,
+                    // aunque coincidan dos preselecciones a la vez.
+                    const masReciente = [...activos].sort(
+                        (a, b) => new Date(b.turno.iniciadoEn).getTime() - new Date(a.turno.iniciadoEn).getTime(),
+                    )[0]!;
+                    ultimaActividadPreseleccion = new Date(masReciente.turno.iniciadoEn).getTime();
+                    const deLaCategoriaElegida = activos.filter((a) => a.categoria.categoria === masReciente.categoria.categoria);
+
+                    const entradas = await Promise.all(
+                        deLaCategoriaElegida.map(async (a): Promise<EntradaEscenarioPreseleccion> => {
+                            const resProximos = await getProximosPreseleccion(a.categoria.categoria, a.escenarioId);
+                            return {
+                                escenarioId: a.escenarioId,
+                                escenarioNombre: a.escenarioNombre,
+                                turno: a.turno,
+                                proximos: resProximos.ok ? resProximos.data.proximos.slice(0, MAXIMO_PROXIMAS_COLUMNA) : [],
+                            };
+                        }),
+                    );
                     if (cancelado) return;
-                    setDatos({
-                        tipo: "preseleccion",
-                        categoria: elegida.categoria,
-                        turno: elegida.turno,
-                        proximos: resProximos.ok ? resProximos.data.proximos : [],
-                    });
-                    return;
+                    datosPreseleccion = { tipo: "preseleccion", categoria: masReciente.categoria, entradas };
                 }
+            }
+
+            // Preselección gana si no hay ninguna categoría EN_CURSO en
+            // absoluto, o si su actividad es más reciente que la de la
+            // categoría EN_CURSO inactiva (ver comentario de elegirCategoriaActiva).
+            if (datosPreseleccion && (!elegidaBatalla || ultimaActividadPreseleccion >= elegidaBatalla.ultimaActividad)) {
+                setDatos(datosPreseleccion);
+                return;
             }
 
             if (elegidaBatalla) {
@@ -384,68 +430,77 @@ function TableroContenido() {
                     )}
 
                     {datos.tipo === "preseleccion" && (
-                        <>
-                            <div className="relative mt-5 shrink-0 overflow-hidden rounded-2xl border-2 border-white/10 shadow-2xl shadow-black/60">
-                                <div className="fondo-vs-azul absolute inset-0" />
-                                <div className="relative flex items-center justify-between bg-black/50 px-5 py-2 backdrop-blur-sm">
-                                    <span className="font-display text-xs uppercase tracking-[0.25em] text-white sm:text-sm">
-                                        Preselección
-                                    </span>
-                                    <span className="flex items-center gap-2 font-display text-xs uppercase tracking-[0.25em] text-white">
-                                        <span className="h-2 w-2 animate-pulse rounded-full bg-white" />
-                                        En tarima
-                                    </span>
-                                </div>
-                                <div className="relative flex items-center justify-center py-8 sm:py-10">
-                                    <p className="truncate px-4 text-center font-display text-4xl uppercase text-white drop-shadow-[0_0_18px_rgba(31,111,255,0.85)] sm:text-6xl">
-                                        {nombreCompetidor(datos.turno.participante)}
-                                    </p>
-                                </div>
-                            </div>
-
-                            {datos.proximos.length > 0 && (
-                                <div className="mt-6 flex min-h-0 flex-1 flex-col">
-                                    <p className="shrink-0 font-display text-lg uppercase tracking-widest text-boss-gray sm:text-2xl">
-                                        Próximas presentaciones
-                                    </p>
-                                    <div className="mt-3 grid flex-1 grid-rows-5 gap-2.5">
-                                        {datos.proximos.map((participante, indice) => {
-                                            const esSiguiente = indice === 0;
-                                            return (
-                                                <div
-                                                    key={participante.id}
-                                                    className={[
-                                                        "flex min-h-0 items-center gap-4 rounded-xl border px-4 transition-colors",
-                                                        esSiguiente
-                                                            ? "border-boss-red/60 bg-gradient-to-r from-boss-red/15 via-boss-panel to-boss-panel shadow-[0_0_22px_rgba(226,9,26,0.2)]"
-                                                            : "border-boss-border bg-boss-panel/40",
-                                                    ].join(" ")}
-                                                >
-                                                    <div
-                                                        className={[
-                                                            "flex h-8 w-8 shrink-0 items-center justify-center rounded-full font-display text-base sm:h-9 sm:w-9 sm:text-lg",
-                                                            esSiguiente
-                                                                ? "bg-boss-red text-white shadow-[0_0_14px_rgba(226,9,26,0.7)]"
-                                                                : "border border-boss-border bg-boss-black text-boss-gray",
-                                                        ].join(" ")}
-                                                    >
-                                                        {indice + 1}
-                                                    </div>
-                                                    <span className="flex-1 truncate text-center font-display text-base uppercase text-white sm:text-lg">
-                                                        {nombreParticipante(participante)}
-                                                    </span>
-                                                    {esSiguiente && (
-                                                        <span className="hidden shrink-0 rounded-full bg-boss-red/15 px-3 py-1 font-display text-[10px] uppercase tracking-widest text-boss-red sm:block">
-                                                            Siguiente
-                                                        </span>
-                                                    )}
-                                                </div>
-                                            );
-                                        })}
+                        <div
+                            className={[
+                                "mt-5 grid min-h-0 flex-1 gap-4",
+                                datos.entradas.length === 1 ? "grid-cols-1" : datos.entradas.length === 2 ? "grid-cols-2" : "grid-cols-3",
+                            ].join(" ")}
+                        >
+                            {datos.entradas.map((entrada) => (
+                                <div key={entrada.escenarioId} className="flex min-h-0 flex-col">
+                                    <div className="relative shrink-0 overflow-hidden rounded-2xl border-2 border-white/10 shadow-2xl shadow-black/60">
+                                        <div className="fondo-vs-azul absolute inset-0" />
+                                        <div className="relative flex items-center justify-between bg-black/50 px-3 py-2 backdrop-blur-sm">
+                                            <span className="truncate font-display text-base uppercase tracking-[0.15em] text-white sm:text-xl">
+                                                {entrada.escenarioNombre}
+                                            </span>
+                                            <span className="flex shrink-0 items-center gap-1.5 font-display text-[10px] uppercase tracking-[0.2em] text-white sm:text-xs">
+                                                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-white" />
+                                                En tarima
+                                            </span>
+                                        </div>
+                                        <div className="relative flex items-center justify-center px-2 py-5 sm:py-6">
+                                            <p className="truncate text-center font-display text-xl uppercase text-white drop-shadow-[0_0_14px_rgba(31,111,255,0.85)] sm:text-3xl">
+                                                {nombreCompetidor(entrada.turno.participante)}
+                                            </p>
+                                        </div>
                                     </div>
+
+                                    {entrada.proximos.length > 0 && (
+                                        <div className="mt-3 flex min-h-0 flex-1 flex-col">
+                                            <p className="shrink-0 font-display text-xs uppercase tracking-widest text-boss-gray sm:text-sm">
+                                                Próximos
+                                            </p>
+                                            {/* grid-rows-3 (= MAXIMO_PROXIMAS_COLUMNA) fija el mismo alto de fila
+                                                sin importar cuántos "próximos" haya en ESTA columna puntual — así
+                                                las tarjetas de las 3 columnas quedan del mismo tamaño entre sí
+                                                (filas parejas), en vez de estirarse para llenar el espacio cuando
+                                                a un escenario le queda poca gente en la fila. */}
+                                            <div className="mt-2 grid flex-1 grid-rows-3 gap-2">
+                                                {entrada.proximos.map((participante, indice) => {
+                                                    const esSiguiente = indice === 0;
+                                                    return (
+                                                        <div
+                                                            key={participante.id}
+                                                            className={[
+                                                                "flex min-h-0 items-center gap-2.5 rounded-lg border px-3 transition-colors",
+                                                                esSiguiente
+                                                                    ? "border-boss-red/60 bg-gradient-to-r from-boss-red/15 via-boss-panel to-boss-panel"
+                                                                    : "border-boss-border bg-boss-panel/40",
+                                                            ].join(" ")}
+                                                        >
+                                                            <span
+                                                                className={[
+                                                                    "flex h-6 w-6 shrink-0 items-center justify-center rounded-full font-display text-xs sm:h-7 sm:w-7 sm:text-sm",
+                                                                    esSiguiente
+                                                                        ? "bg-boss-red text-white"
+                                                                        : "border border-boss-border text-boss-gray",
+                                                                ].join(" ")}
+                                                            >
+                                                                {indice + 1}
+                                                            </span>
+                                                            <span className="flex-1 truncate text-center font-display text-base uppercase text-white sm:text-xl">
+                                                                {nombreParticipante(participante)}
+                                                            </span>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
-                            )}
-                        </>
+                            ))}
+                        </div>
                     )}
                 </div>
             )}

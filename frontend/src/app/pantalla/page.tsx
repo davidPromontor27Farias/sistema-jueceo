@@ -18,6 +18,7 @@ import {
 import { SecuenciaOverlay, useSecuenciaBatalla } from "./SecuenciaBatalla";
 import {
     RecapPreseleccionOverlay,
+    SecuenciaPreseleccionMultiOverlay,
     SecuenciaPreseleccionOverlay,
     useRecapPreseleccion,
     useSecuenciaPreseleccion,
@@ -75,11 +76,16 @@ function useEscenarioEfectivo(categoria: Categoria | null | undefined): string |
 }
 
 function PantallaPublicaContenido() {
+    const searchParams = useSearchParams();
+    const escenarioParam = searchParams.get("escenario");
+
     const [estado, setEstado] = useState<PantallaEstado | null>(null);
     const [enfrentamientos, setEnfrentamientos] = useState<Enfrentamiento[]>([]);
     const [todosLosEnfrentamientos, setTodosLosEnfrentamientos] = useState<Enfrentamiento[]>([]);
     const [turnoPreseleccion, setTurnoPreseleccion] = useState<TurnoPreseleccion>(null);
     const [resultadosPreseleccion, setResultadosPreseleccion] = useState<ResultadoPreseleccionItem[]>([]);
+    const [escenariosCategoria, setEscenariosCategoria] = useState<{ id: string; nombre: string }[]>([]);
+    const [turnosPorEscenario, setTurnosPorEscenario] = useState<Record<string, TurnoPreseleccion>>({});
     const escenarioId = useEscenarioEfectivo(estado?.categoriaEnfocada);
 
     useEffect(() => {
@@ -142,6 +148,44 @@ function PantallaPublicaContenido() {
         };
     }, [estado?.categoriaEnfocada, escenarioId]);
 
+    // Pantalla general (sin ?escenario=): a diferencia del poll de arriba
+    // (que sigue a UN escenario puntual), acá se sigue a TODOS los
+    // escenarios activos de la categoría enfocada a la vez, para la pantalla
+    // dividida en columnas (ver SecuenciaPreseleccionMultiOverlay más abajo)
+    // — cada escenario avanza a su propio ritmo, así que hace falta su
+    // propio turno-actual por separado, no uno solo.
+    useEffect(() => {
+        if (!estado?.categoriaEnfocada || escenarioParam) {
+            setEscenariosCategoria([]);
+            setTurnosPorEscenario({});
+            return;
+        }
+
+        const categoria = estado.categoriaEnfocada;
+        let cancelado = false;
+        const poll = async () => {
+            const resEscenarios = await getEscenariosDeCategoria(categoria);
+            if (cancelado || !resEscenarios.ok) return;
+            const escenarios = resEscenarios.data.escenarios;
+            setEscenariosCategoria(escenarios);
+
+            const turnos = await Promise.all(
+                escenarios.map(async (esc) => {
+                    const resTurno = await getTurnoPreseleccionActual(categoria, esc.id);
+                    return [esc.id, resTurno.ok ? resTurno.data.turno : null] as const;
+                }),
+            );
+            if (cancelado) return;
+            setTurnosPorEscenario(Object.fromEntries(turnos));
+        };
+        poll();
+        const id = setInterval(poll, INTERVALO_MS);
+        return () => {
+            cancelado = true;
+            clearInterval(id);
+        };
+    }, [estado?.categoriaEnfocada, escenarioParam]);
+
     // Ranking completo de Preselección (para el recorrido de resultados una
     // vez que se acaba la fila de turnos, ver useRecapPreseleccion) — mismo
     // criterio que el poll de turno-actual: corre sin importar la vista.
@@ -185,12 +229,22 @@ function PantallaPublicaContenido() {
     }, [estado?.vista]);
 
     const secuencia = useSecuenciaBatalla(enfrentamientos);
+    // Solo se usa de verdad en modo ?escenario= (pantalla fija a un
+    // escenario); en modo general va alimentada con turnoPreseleccion=null
+    // (el poll de arriba lo deja así cuando hay escenarioParam), así que su
+    // fase siempre es "normal" y no estorba.
     const secuenciaPreseleccion = useSecuenciaPreseleccion(turnoPreseleccion);
-    const recapPreseleccion = useRecapPreseleccion(
-        estado?.categoriaEnfocada ?? null,
-        turnoPreseleccion,
-        resultadosPreseleccion,
-    );
+
+    // Pantalla dividida: solo los escenarios que tienen a alguien en tarima
+    // AHORA MISMO entran al grid — si un escenario termina su fila, su
+    // columna desaparece sola en el siguiente poll (ver
+    // SecuenciaPreseleccionMultiOverlay).
+    const entradasActivas = escenariosCategoria
+        .map((esc) => ({ escenarioId: esc.id, escenarioNombre: esc.nombre, turno: turnosPorEscenario[esc.id] ?? null }))
+        .filter((e): e is { escenarioId: string; escenarioNombre: string; turno: NonNullable<TurnoPreseleccion> } => e.turno !== null);
+
+    const hayTurnoActivo = escenarioParam ? !!turnoPreseleccion : entradasActivas.length > 0;
+    const recapPreseleccion = useRecapPreseleccion(estado?.categoriaEnfocada ?? null, hayTurnoActivo, resultadosPreseleccion);
 
     // En la práctica nunca se solapan (una categoría está en un solo estatus
     // a la vez: PRESELECCION o EN_CURSO), pero por robustez la secuencia de
@@ -209,7 +263,9 @@ function PantallaPublicaContenido() {
         );
     }
 
-    if (secuenciaPreseleccion.fase !== "normal") {
+    // Modo pantalla-de-un-escenario (?escenario=<id>): sin cambios, pantalla
+    // completa fija a ese único turno.
+    if (escenarioParam && secuenciaPreseleccion.fase !== "normal") {
         return (
             <>
                 <ModoPruebaBadge />
@@ -218,6 +274,17 @@ function PantallaPublicaContenido() {
                     turno={secuenciaPreseleccion.turno}
                     segundosRestantes={secuenciaPreseleccion.segundosRestantes}
                 />
+            </>
+        );
+    }
+
+    // Pantalla general: dividida en 1/2/3 columnas según cuántos escenarios
+    // tengan turno activo ahora mismo.
+    if (!escenarioParam && entradasActivas.length > 0 && estado?.categoriaEnfocada) {
+        return (
+            <>
+                <ModoPruebaBadge />
+                <SecuenciaPreseleccionMultiOverlay categoria={estado.categoriaEnfocada} entradas={entradasActivas} />
             </>
         );
     }
@@ -384,7 +451,7 @@ function VistaGanadores({ enfrentamientos }: { enfrentamientos: Enfrentamiento[]
     }
 
     return (
-        <div className="mx-auto mt-6 flex max-w-5xl flex-wrap items-start justify-center gap-x-3 gap-y-8 sm:mt-8 sm:gap-x-4 sm:gap-y-12">
+        <div className="mx-auto mt-16 flex max-w-5xl flex-wrap items-start justify-center gap-x-3 gap-y-8 sm:mt-24 sm:gap-x-4 sm:gap-y-12">
             {campeones.map((e) => (
                 <TarjetaCampeon key={e.id} enfrentamiento={e} />
             ))}
