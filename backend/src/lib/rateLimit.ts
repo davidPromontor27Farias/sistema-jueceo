@@ -9,6 +9,20 @@ export const registrationCreateLimiter = rateLimit({
     message: { error: "Demasiados intentos, intenta de nuevo más tarde" },
 });
 
+// Registro del Evento de Prueba: mismo endpoint lo usa el equipo para
+// ensayar el flujo completo una y otra vez desde la misma IP (sin Stripe de
+// por medio, no hay riesgo de fraude de tarjeta que frenar) — reusar el
+// límite de 10/15min pensado para el registro REAL los bloqueaba a media
+// prueba con "Demasiados intentos". Separado del de arriba a propósito: el
+// registro real sí debe seguir limitado contra spam/card-testing.
+export const registrationPruebaCreateLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 200,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: "Demasiados intentos, intenta de nuevo más tarde" },
+});
+
 // Consulta de estatus de pago: el frontend hace polling (~20 veces cada 2.5s tras pagar).
 export const registrationStatusLimiter = rateLimit({
     windowMs: 5 * 60 * 1000,

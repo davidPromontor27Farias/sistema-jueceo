@@ -4,7 +4,7 @@ import { registrationSchema } from "../types/registration";
 import { CATEGORIAS_LABEL, PREFIJO_ID_COMPETIDOR_PRUEBA, tipoBoletoPorCategoria } from "../config/catalog";
 import { prisma } from "../lib/prisma";
 import { generarQrDataUrl } from "../lib/qr";
-import { registrationCreateLimiter } from "../lib/rateLimit";
+import { registrationPruebaCreateLimiter } from "../lib/rateLimit";
 
 const MAX_INTENTOS_ID = 5;
 
@@ -40,7 +40,7 @@ async function asignarCompetidorIdPrueba(registrationId: string): Promise<string
 // resto del sistema (Preselección, Jueceo, Brackets, Pantalla, Control de
 // Accesos) lo trate exactamente igual que uno real ya pagado, mientras el
 // modo prueba esté activo (ver backend/src/lib/modoEvento.ts).
-registrationsPruebaRouter.post("/", registrationCreateLimiter, async (req, res) => {
+registrationsPruebaRouter.post("/", registrationPruebaCreateLimiter, async (req, res) => {
     const parsed = registrationSchema.safeParse(req.body);
     if (!parsed.success) {
         return res.status(400).json({ errors: parsed.error.flatten() });
