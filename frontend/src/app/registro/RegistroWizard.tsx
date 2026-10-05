@@ -224,7 +224,7 @@ export function RegistroWizard({ modoPrueba }: { modoPrueba: boolean }) {
 }
 
 const RAZONES_PARA_INSCRIBIRTE = [
-    "9 categorías oficiales",
+    "8 categorías oficiales",
     "Jueceo y resultados digitales.",
     "Workshops con invitados internacionales.",
 ];

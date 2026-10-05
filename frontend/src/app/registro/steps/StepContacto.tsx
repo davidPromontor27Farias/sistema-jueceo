@@ -62,50 +62,46 @@ export function StepContacto() {
                 </Field>
             )}
 
-            <Field
-                label="Foto"
-                error={fotoDeshabilitada ? undefined : (errorFoto ?? errors.fotoUrl?.message)}
-                hint={
-                    fotoDeshabilitada
-                        ? "No requerida para Público General."
-                        : "Rostro visible, sin lentes oscuros, fondo neutro preferentemente. JPG o PNG, mínimo 800x800px, máximo 5MB."
-                }
-            >
-                {/* fotoUrl se llena vía setValue tras subir a Cloudinary; este input oculto
-                    registra el campo en react-hook-form para que trigger()/validación lo detecte. */}
+            {fotoDeshabilitada ? (
                 <input type="hidden" {...register("fotoUrl")} />
-                {fotoUrl && !subiendo ? (
-                    <div className="flex items-center gap-3">
-                        <Image
-                            src={fotoUrl}
-                            alt="Foto de perfil"
-                            width={64}
-                            height={64}
-                            unoptimized
-                            className="h-16 w-16 rounded-full border border-boss-border object-cover"
-                        />
-                        <div className="flex flex-col items-start gap-1.5">
-                            <span className="text-xs text-boss-green">Foto lista para tu perfil</span>
-                            <button
-                                type="button"
-                                onClick={corregirFoto}
-                                className="text-xs font-semibold uppercase tracking-wide text-boss-red underline-offset-2 hover:underline"
-                            >
-                                Cambiar foto
-                            </button>
+            ) : (
+                <Field label="Foto" error={errorFoto ?? errors.fotoUrl?.message} hint="Rostro visible, sin lentes oscuros, fondo neutro preferentemente. JPG o PNG, mínimo 800x800px, máximo 5MB.">
+                    {/* fotoUrl se llena vía setValue tras subir a Cloudinary; este input oculto
+                        registra el campo en react-hook-form para que trigger()/validación lo detecte. */}
+                    <input type="hidden" {...register("fotoUrl")} />
+                    {fotoUrl && !subiendo ? (
+                        <div className="flex items-center gap-3">
+                            <Image
+                                src={fotoUrl}
+                                alt="Foto de perfil"
+                                width={64}
+                                height={64}
+                                unoptimized
+                                className="h-16 w-16 rounded-full border border-boss-border object-cover"
+                            />
+                            <div className="flex flex-col items-start gap-1.5">
+                                <span className="text-xs text-boss-green">Foto lista para tu perfil</span>
+                                <button
+                                    type="button"
+                                    onClick={corregirFoto}
+                                    className="text-xs font-semibold uppercase tracking-wide text-boss-red underline-offset-2 hover:underline"
+                                >
+                                    Cambiar foto
+                                </button>
+                            </div>
                         </div>
-                    </div>
-                ) : (
-                    <input
-                        type="file"
-                        accept="image/jpeg,image/png"
-                        onChange={onFotoSeleccionada}
-                        disabled={subiendo || fotoDeshabilitada}
-                        className={`${inputClass} cursor-pointer file:mr-3 file:rounded file:border-0 file:bg-boss-red file:px-3 file:py-1.5 file:text-white disabled:cursor-not-allowed disabled:opacity-50`}
-                    />
-                )}
-                {subiendo && <span className="mt-2 block text-xs text-boss-gray">Subiendo foto...</span>}
-            </Field>
+                    ) : (
+                        <input
+                            type="file"
+                            accept="image/jpeg,image/png"
+                            onChange={onFotoSeleccionada}
+                            disabled={subiendo}
+                            className={`${inputClass} cursor-pointer file:mr-3 file:rounded file:border-0 file:bg-boss-red file:px-3 file:py-1.5 file:text-white disabled:cursor-not-allowed disabled:opacity-50`}
+                        />
+                    )}
+                    {subiendo && <span className="mt-2 block text-xs text-boss-gray">Subiendo foto...</span>}
+                </Field>
+            )}
         </>
     );
 }
