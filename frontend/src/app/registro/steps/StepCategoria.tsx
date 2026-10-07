@@ -262,7 +262,7 @@ export function StepCategoria() {
             </Field>
 
             {permiteWorkshopsAdicionales && (
-                <Field label="Workshops (opcional, 1 a 3)">
+                <Field label="Workshops Breaking (opcional, 1 a 3)">
                     <div className="flex flex-wrap gap-4">
                         {[1, 2, 3].map((numero) => (
                             <label key={numero} className="flex items-center gap-2 text-sm text-foreground">

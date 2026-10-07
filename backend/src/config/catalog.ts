@@ -146,9 +146,10 @@ export const ACADEMIAS_CONOCIDAS = ["Academia Ejemplo 1", "Academia Ejemplo 2", 
 
 // Precio en centavos de MXN (evita errores de punto flotante).
 // Precios vigentes actuales, sin descuento previo (confirmados con el cliente
-// el 28/07/2026: The Boss Entry $600 y The Boss Experience $1,200).
+// el 28/07/2026: The Boss Experience $1,200; The Boss Entry actualizado a
+// $650 el 06/10/2026).
 export const PRECIO_MXN_CENTAVOS_POR_PAQUETE_BASE: Record<PaqueteBase, number> = {
-    COMPETIDOR: 60000, // THE BOSS ENTRY: $600.00 MXN
+    COMPETIDOR: 65000, // THE BOSS ENTRY: $650.00 MXN
     PUBLICO_GENERAL: 25000, // Entrada General: $250.00 MXN
     VIP_EXPERIENCE: 50000, // VIP Experience: $500.00 MXN
     BOSS_EXPERIENCE: 120000, // Competencia + 3 workshops: $1,200.00 MXN

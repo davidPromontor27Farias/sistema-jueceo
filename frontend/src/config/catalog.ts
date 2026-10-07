@@ -195,7 +195,7 @@ export const ACADEMIAS_CONOCIDAS = [
 // Precio en centavos de MXN. Debe coincidir exactamente con backend/src/config/catalog.ts
 // (el backend siempre recalcula el total; esto solo es para mostrarlo en el formulario).
 export const PRECIO_MXN_CENTAVOS_POR_PAQUETE_BASE: Record<PaqueteBase, number> = {
-    COMPETIDOR: 60000,
+    COMPETIDOR: 65000,
     PUBLICO_GENERAL: 25000,
     VIP_EXPERIENCE: 50000,
     BOSS_EXPERIENCE: 120000,
