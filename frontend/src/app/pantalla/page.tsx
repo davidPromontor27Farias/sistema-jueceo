@@ -295,6 +295,8 @@ function PantallaPublicaContenido() {
                     fase={secuencia.fase}
                     enfrentamiento={secuencia.enfrentamiento}
                     segundosRestantes={secuencia.segundosRestantes}
+                    vuelta={secuencia.vuelta}
+                    totalVueltas={secuencia.totalVueltas}
                     todosLosEnfrentamientos={enfrentamientos}
                 />
             </>

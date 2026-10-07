@@ -333,12 +333,14 @@ function FormularioCalificacion({
 
     // Igual que en Preselección: el envío espera a que AMBOS competidores
     // (A y B) terminen su turno en tarima — las estrellas se pueden ir
-    // marcando desde antes.
+    // marcando desde antes. Si es Final (rondasBaile=2), espera a que
+    // terminen las DOS vueltas completas, no solo la primera.
     useEffect(() => {
         const id = setInterval(() => setAhora(Date.now()), 500);
         return () => clearInterval(id);
     }, []);
-    const { finTurnoB } = calcularLimites(enfrentamiento);
+    const { vueltas } = calcularLimites(enfrentamiento);
+    const finTurnoB = vueltas[vueltas.length - 1]!.finTurnoB;
     const presentacionTerminada = ahora - new Date(enfrentamiento.updatedAt).getTime() >= finTurnoB;
 
     const setValor = (campo: keyof PuntajesCalificacion, valor: number) => {

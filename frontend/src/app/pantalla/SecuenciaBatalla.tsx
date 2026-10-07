@@ -36,6 +36,11 @@ export type EstadoSecuencia = {
     fase: FaseSecuencia;
     enfrentamiento: Enfrentamiento | null;
     segundosRestantes: number;
+    // 1-indexado. Normalmente vuelta=1 de totalVueltas=1 (lo de siempre); en
+    // una Final (rondasBaile=2) sube a vuelta=2 a la mitad de la secuencia —
+    // ver el banner "RONDA X DE Y" en SecuenciaOverlay.
+    vuelta: number;
+    totalVueltas: number;
 };
 
 function nombreCompetidor(c: Enfrentamiento["competidorA"]): string {
@@ -43,40 +48,67 @@ function nombreCompetidor(c: Enfrentamiento["competidorA"]): string {
     return c.nombreArtistico || `${c.nombres} ${c.apellidos}`;
 }
 
-// Límites (en ms desde que arrancó la batalla) de cada fase. Si el SUPER_ADMIN
-// cortó un turno (ver POST /enfrentamientos/:id/cortar-turno), ese corte
-// reemplaza la duración fija del turno para todo lo que viene después —
-// el competidor B no espera a que se agote el minuto completo de A.
-export function calcularLimites(enf: Enfrentamiento) {
+type LimitesVuelta = {
+    finPresentacionA: number;
+    finTurnoA: number;
+    finPresentacionB: number;
+    finTurnoB: number;
+};
+
+// Límites (en ms desde que arrancó la batalla) de cada fase, UNA entrada por
+// vuelta (rondasBaile: 1 de costumbre, 2 en las Finales — ver
+// filasParaRonda en backend/src/routes/competencia.ts). Si el SUPER_ADMIN
+// cortó un turno (ver POST /enfrentamientos/:id/cortar-turno), ese corte es
+// UN solo timestamp absoluto en toda la base de datos (no uno por vuelta): se
+// le asigna a la vuelta cuya ventana SIN cortar lo contiene — así un corte en
+// la vuelta 1 no afecta por accidente el cálculo de la vuelta 2. Limitación
+// conocida y aceptada: si se corta el mismo lado (A o B) en más de una
+// vuelta de la misma Final, solo el corte más reciente queda guardado (el
+// campo se sobreescribe) — cortar una vez por lado alcanza para el caso real
+// de "ya terminó, no hace falta esperar el resto del minuto".
+export function calcularLimites(enf: Enfrentamiento): { finAnuncio: number; vueltas: LimitesVuelta[] } {
     const inicio = new Date(enf.updatedAt).getTime();
     const finAnuncio = DURACION_ANUNCIO_VS_MS;
-    const finPresentacionA = finAnuncio + DURACION_PRESENTACION_MS;
-    const finTurnoAProgramado = finPresentacionA + DURACION_TURNO_MS;
-    const finTurnoA = enf.turnoACortadoEn
-        ? Math.min(Math.max(new Date(enf.turnoACortadoEn).getTime() - inicio, finPresentacionA), finTurnoAProgramado)
-        : finTurnoAProgramado;
-    const finPresentacionB = finTurnoA + DURACION_PRESENTACION_MS;
-    const finTurnoBProgramado = finPresentacionB + DURACION_TURNO_MS;
-    const finTurnoB = enf.turnoBCortadoEn
-        ? Math.min(Math.max(new Date(enf.turnoBCortadoEn).getTime() - inicio, finPresentacionB), finTurnoBProgramado)
-        : finTurnoBProgramado;
-    return { finAnuncio, finPresentacionA, finTurnoA, finPresentacionB, finTurnoB };
+    const totalVueltas = Math.max(1, enf.rondasBaile || 1);
+    const cortoA = enf.turnoACortadoEn ? new Date(enf.turnoACortadoEn).getTime() - inicio : null;
+    const cortoB = enf.turnoBCortadoEn ? new Date(enf.turnoBCortadoEn).getTime() - inicio : null;
+
+    const vueltas: LimitesVuelta[] = [];
+    let cursor = finAnuncio;
+    for (let i = 0; i < totalVueltas; i++) {
+        const finPresentacionA = cursor + DURACION_PRESENTACION_MS;
+        const finTurnoAProgramado = finPresentacionA + DURACION_TURNO_MS;
+        const finTurnoA =
+            cortoA !== null && cortoA >= finPresentacionA && cortoA <= finTurnoAProgramado ? cortoA : finTurnoAProgramado;
+        const finPresentacionB = finTurnoA + DURACION_PRESENTACION_MS;
+        const finTurnoBProgramado = finPresentacionB + DURACION_TURNO_MS;
+        const finTurnoB =
+            cortoB !== null && cortoB >= finPresentacionB && cortoB <= finTurnoBProgramado ? cortoB : finTurnoBProgramado;
+        vueltas.push({ finPresentacionA, finTurnoA, finPresentacionB, finTurnoB });
+        cursor = finTurnoB;
+    }
+    return { finAnuncio, vueltas };
 }
 
 // Máquina de estados que reacciona sola al ciclo de vida de la batalla en
 // curso de la categoría enfocada. Desde que el staff pone un enfrentamiento
 // en EN_CURSO ("Iniciar batalla"):
-//   anuncio_vs (5s, "Fulano VS Mengano" juntos) -> presentando_a (8s, nombre
-//   del competidor A solo) -> turno_a (30s, su participación) ->
-//   presentando_b (8s) -> turno_b (30s) -> esperando_jueces (sin límite: los
-//   jueces ya pudieron calificar desde que arrancó la batalla; aquí solo se
-//   espera a que TODOS terminen) -> ganador (10s) -> vuelve a normal.
+//   anuncio_vs (5s, "Fulano VS Mengano" juntos) -> [presentando_a (8s) ->
+//   turno_a (1min) -> presentando_b (8s) -> turno_b (1min)] x rondasBaile ->
+//   esperando_jueces (sin límite: los jueces ya pudieron calificar desde que
+//   arrancó la batalla; aquí solo se espera a que TODOS terminen) ->
+//   ganador (10s) -> vuelve a normal. El bloque entre corchetes se repite
+//   rondasBaile veces seguidas SIN pasar por esperando_jueces entre una
+//   vuelta y la siguiente (normal: 1 vez; Final: 2 — ver rondasBaile en
+//   schema.prisma) — los jueces califican una sola vez, sobre el total de
+//   todas las vueltas.
 // No hace poll propio: usa los mismos `enfrentamientos` que ya está sondeando
 // /pantalla cada 3s.
 export function useSecuenciaBatalla(enfrentamientos: Enfrentamiento[]): EstadoSecuencia {
     const [fase, setFase] = useState<FaseSecuencia>("normal");
     const [activo, setActivo] = useState<Enfrentamiento | null>(null);
     const [segundosRestantes, setSegundosRestantes] = useState(30);
+    const [vuelta, setVuelta] = useState(1);
 
     // Ids ya mostrados de punta a punta, para no repetir la secuencia si el
     // mismo enfrentamiento sigue apareciendo (ya FINALIZADO) en polls futuros.
@@ -130,35 +162,51 @@ export function useSecuenciaBatalla(enfrentamientos: Enfrentamiento[]): EstadoSe
         timeoutRef.current = setTimeout(() => iniciarGanador(enf), DURACION_RESULTADOS_MS);
     };
 
-    const iniciarTurno = (fase: "turno_a" | "turno_b", enf: Enfrentamiento, duracionMs: number) => {
+    const iniciarTurno = (faseTurno: "turno_a" | "turno_b", enf: Enfrentamiento, duracionMs: number, vueltaActual: number) => {
         limpiarTimers();
         setActivo(enf);
-        setFase(fase);
+        setFase(faseTurno);
+        setVuelta(vueltaActual);
         let restantes = Math.max(Math.ceil(duracionMs / 1000), 0);
         setSegundosRestantes(restantes);
         intervalRef.current = setInterval(() => {
             restantes -= 1;
             setSegundosRestantes(Math.max(restantes, 0));
         }, 1000);
+        const totalVueltas = Math.max(1, enf.rondasBaile || 1);
         const siguiente =
-            fase === "turno_a" ? () => iniciarPresentando("presentando_b", enf, DURACION_PRESENTACION_MS) : () => iniciarEsperando(enf);
+            faseTurno === "turno_a"
+                ? () => iniciarPresentando("presentando_b", enf, DURACION_PRESENTACION_MS, vueltaActual)
+                : vueltaActual < totalVueltas
+                  ? () => iniciarPresentando("presentando_a", enf, DURACION_PRESENTACION_MS, vueltaActual + 1)
+                  : () => iniciarEsperando(enf);
         timeoutRef.current = setTimeout(siguiente, Math.max(duracionMs, 0));
     };
 
-    const iniciarPresentando = (fase: "presentando_a" | "presentando_b", enf: Enfrentamiento, duracionMs: number) => {
+    const iniciarPresentando = (
+        faseP: "presentando_a" | "presentando_b",
+        enf: Enfrentamiento,
+        duracionMs: number,
+        vueltaActual: number,
+    ) => {
         limpiarTimers();
         setActivo(enf);
-        setFase(fase);
-        const siguiente = fase === "presentando_a" ? "turno_a" : "turno_b";
-        timeoutRef.current = setTimeout(() => iniciarTurno(siguiente, enf, DURACION_TURNO_MS), Math.max(duracionMs, 0));
+        setFase(faseP);
+        setVuelta(vueltaActual);
+        const siguiente = faseP === "presentando_a" ? "turno_a" : "turno_b";
+        timeoutRef.current = setTimeout(
+            () => iniciarTurno(siguiente, enf, DURACION_TURNO_MS, vueltaActual),
+            Math.max(duracionMs, 0),
+        );
     };
 
     const iniciarAnuncioVs = (enf: Enfrentamiento, duracionMs: number) => {
         limpiarTimers();
         setActivo(enf);
         setFase("anuncio_vs");
+        setVuelta(1);
         timeoutRef.current = setTimeout(
-            () => iniciarPresentando("presentando_a", enf, DURACION_PRESENTACION_MS),
+            () => iniciarPresentando("presentando_a", enf, DURACION_PRESENTACION_MS, 1),
             Math.max(duracionMs, 0),
         );
     };
@@ -167,7 +215,8 @@ export function useSecuenciaBatalla(enfrentamientos: Enfrentamiento[]): EstadoSe
     // EN_CURSO para una ronda extra (ver intentarResolverEnfrentamiento). Se
     // muestra un aviso fijo (sin depender del tiempo transcurrido, es un
     // reinicio deliberado) y después se reinicia la secuencia completa desde
-    // el anuncio VS para esta misma pareja.
+    // el anuncio VS para esta misma pareja (las dos vueltas de nuevo, si
+    // rondasBaile=2).
     const iniciarEmpate = (enf: Enfrentamiento) => {
         limpiarTimers();
         setActivo(enf);
@@ -185,21 +234,33 @@ export function useSecuenciaBatalla(enfrentamientos: Enfrentamiento[]): EstadoSe
 
         Promise.resolve().then(() => {
             const transcurrido = Date.now() - new Date(enCurso.updatedAt).getTime();
-            const { finAnuncio, finPresentacionA, finTurnoA, finPresentacionB, finTurnoB } = calcularLimites(enCurso);
+            const { finAnuncio, vueltas } = calcularLimites(enCurso);
 
             if (transcurrido < finAnuncio) {
                 iniciarAnuncioVs(enCurso, finAnuncio - transcurrido);
-            } else if (transcurrido < finPresentacionA) {
-                iniciarPresentando("presentando_a", enCurso, finPresentacionA - transcurrido);
-            } else if (transcurrido < finTurnoA) {
-                iniciarTurno("turno_a", enCurso, finTurnoA - transcurrido);
-            } else if (transcurrido < finPresentacionB) {
-                iniciarPresentando("presentando_b", enCurso, finPresentacionB - transcurrido);
-            } else if (transcurrido < finTurnoB) {
-                iniciarTurno("turno_b", enCurso, finTurnoB - transcurrido);
-            } else {
-                iniciarEsperando(enCurso);
+                return;
             }
+            for (let i = 0; i < vueltas.length; i++) {
+                const v = vueltas[i]!;
+                const numeroVuelta = i + 1;
+                if (transcurrido < v.finPresentacionA) {
+                    iniciarPresentando("presentando_a", enCurso, v.finPresentacionA - transcurrido, numeroVuelta);
+                    return;
+                }
+                if (transcurrido < v.finTurnoA) {
+                    iniciarTurno("turno_a", enCurso, v.finTurnoA - transcurrido, numeroVuelta);
+                    return;
+                }
+                if (transcurrido < v.finPresentacionB) {
+                    iniciarPresentando("presentando_b", enCurso, v.finPresentacionB - transcurrido, numeroVuelta);
+                    return;
+                }
+                if (transcurrido < v.finTurnoB) {
+                    iniciarTurno("turno_b", enCurso, v.finTurnoB - transcurrido, numeroVuelta);
+                    return;
+                }
+            }
+            iniciarEsperando(enCurso);
         });
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [enfrentamientos, fase]);
@@ -254,7 +315,10 @@ export function useSecuenciaBatalla(enfrentamientos: Enfrentamiento[]): EstadoSe
     // duración completa): si el corte llega por el siguiente poll, cancela ese
     // timer y pasa de inmediato a la siguiente fase, sin esperar el resto del
     // tiempo. Sin esto, calcularLimites() solo ayudaría a la próxima pantalla
-    // que cargue de cero, no a las que ya están a la mitad del turno.
+    // que cargue de cero, no a las que ya están a la mitad del turno. Mismo
+    // límite conocido que calcularLimites: un corte por lado por batalla (si
+    // la Final tiene 2 vueltas y se corta el mismo lado en ambas, solo el
+    // corte más reciente se detecta).
     useEffect(() => {
         if ((fase !== "turno_a" && fase !== "turno_b") || !activo) return;
         const actualizado = enfrentamientos.find((e) => e.id === activo.id);
@@ -265,18 +329,21 @@ export function useSecuenciaBatalla(enfrentamientos: Enfrentamiento[]): EstadoSe
         if (yaCortado || !ahoraCortado) return;
 
         Promise.resolve().then(() => {
+            const totalVueltas = Math.max(1, actualizado.rondasBaile || 1);
             if (fase === "turno_a") {
-                iniciarPresentando("presentando_b", actualizado, DURACION_PRESENTACION_MS);
+                iniciarPresentando("presentando_b", actualizado, DURACION_PRESENTACION_MS, vuelta);
+            } else if (vuelta < totalVueltas) {
+                iniciarPresentando("presentando_a", actualizado, DURACION_PRESENTACION_MS, vuelta + 1);
             } else {
                 iniciarEsperando(actualizado);
             }
         });
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [enfrentamientos, fase, activo]);
+    }, [enfrentamientos, fase, activo, vuelta]);
 
     useEffect(() => limpiarTimers, []);
 
-    return { fase, enfrentamiento: activo, segundosRestantes };
+    return { fase, enfrentamiento: activo, segundosRestantes, vuelta, totalVueltas: Math.max(1, activo?.rondasBaile || 1) };
 }
 
 export function inicialesDe(nombre: string): string {
@@ -480,6 +547,8 @@ export function SecuenciaOverlay({
     fase,
     enfrentamiento,
     segundosRestantes,
+    vuelta,
+    totalVueltas,
     todosLosEnfrentamientos,
 }: EstadoSecuencia & {
     // Todos los enfrentamientos de la categoría enfocada (no solo el activo),
@@ -497,11 +566,16 @@ export function SecuenciaOverlay({
     const esCampeonDeCategoria = enfrentamiento.ronda === "Final";
     const hayPuntajes = enfrentamiento.puntajeA != null && enfrentamiento.puntajeB != null;
     const ganoA = enfrentamiento.ganador?.id === enfrentamiento.competidorA?.id;
+    // Solo tiene sentido mostrarla durante las fases de presentación/turno —
+    // "esperando"/"resultados"/"ganador" ya terminaron todas las vueltas.
+    const mostrarVuelta =
+        totalVueltas > 1 && (fase === "presentando_a" || fase === "turno_a" || fase === "presentando_b" || fase === "turno_b");
 
     return (
         <main className="fixed inset-0 z-50 flex flex-col items-center justify-center overflow-hidden bg-boss-black px-8 text-center">
             <p className="absolute inset-x-0 top-10 z-10 font-display text-lg uppercase tracking-widest text-boss-gray">
                 {CATEGORIAS[enfrentamiento.categoria]} · {enfrentamiento.ronda}
+                {mostrarVuelta && <span className="text-white"> · Ronda {vuelta} de {totalVueltas}</span>}
                 {enfrentamiento.numeroDesempate > 0 && (
                     <span className="text-yellow-400"> · Ronda de desempate {enfrentamiento.numeroDesempate}</span>
                 )}

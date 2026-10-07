@@ -96,6 +96,16 @@ interface FilaRondaNueva {
     competidorBId: string | null;
     estatus: "PENDIENTE" | "FINALIZADO";
     ganadorId: string | null;
+    rondasBaile: number;
+}
+
+// Cuántas veces presenta cada quien antes de que los jueces califiquen: lo de
+// siempre (1) salvo la Final, que son 2 vueltas completas (A1, B1, A2, B2) y
+// hasta ahí entran los jueces — sigue siendo una sola calificación por juez,
+// sobre el total de ambas vueltas (ver rondasBaile en schema.prisma y
+// calcularLimites en frontend/src/app/pantalla/SecuenciaBatalla.tsx).
+function rondasBailePorNombre(nombreDeRonda: string): number {
+    return nombreDeRonda === "Final" ? 2 : 1;
 }
 
 // Arma las filas de una ronda a partir de la lista de participantes (ya
@@ -111,6 +121,7 @@ function filasParaRonda(
     emparejador: (participantes: string[]) => EmparejamientoSlot<string>[],
 ): FilaRondaNueva[] {
     const slots = emparejador(participantes);
+    const rondasBaile = rondasBailePorNombre(nombreDeRonda);
 
     return slots.map((slot, orden) => ({
         categoria,
@@ -121,6 +132,7 @@ function filasParaRonda(
         competidorBId: slot.competidorB,
         estatus: slot.competidorB ? "PENDIENTE" : "FINALIZADO",
         ganadorId: slot.competidorB ? null : slot.competidorA,
+        rondasBaile,
     }));
 }
 
