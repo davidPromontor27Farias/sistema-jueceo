@@ -41,6 +41,7 @@ export function StepDatosPersonales() {
         }
         resetField("paqueteBase");
         resetField("workshopsSeleccionados");
+        resetField("workshopsOpenStyleSeleccionados");
         resetField("agregarOpenStyle");
     };
 

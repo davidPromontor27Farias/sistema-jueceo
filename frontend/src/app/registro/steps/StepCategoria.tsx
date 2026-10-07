@@ -39,6 +39,7 @@ export function StepCategoria() {
     const academiaCrew = watch("academiaCrew");
     const paqueteBase = watch("paqueteBase");
     const workshopsSeleccionados = watch("workshopsSeleccionados") ?? [];
+    const workshopsOpenStyleSeleccionados = watch("workshopsOpenStyleSeleccionados") ?? [];
     const agregarOpenStyle = watch("agregarOpenStyle") ?? false;
 
     const esPublico = tipoParticipacion === "PUBLICO";
@@ -68,19 +69,26 @@ export function StepCategoria() {
 
     const permiteWorkshopsAdicionales =
         !esPublico && !!paqueteBase && !PAQUETES_CON_WORKSHOPS_INCLUIDOS.includes(paqueteBase);
+    const mostrarWorkshopsOpenStyle = paqueteBase === "COMPETIDOR";
     const mostrarPreguntaOpenStyle = !esPublico && !!categoria && categoria !== "OPEN_STYLE_1V1";
 
     // Sin el 20% de preventa: en esta sección solo se refleja el descuento por
     // volumen de los 3 workshops ($600 en vez de $750). El 20% de "primeros 50"
     // se muestra únicamente en el Resumen (paso final), sobre el total.
     const precioTotal = paqueteBase
-        ? calcularPrecioTotal(paqueteBase, workshopsSeleccionados, { agregarOpenStyle })
+        ? calcularPrecioTotal(paqueteBase, workshopsSeleccionados, workshopsOpenStyleSeleccionados, { agregarOpenStyle })
         : 0;
 
     const toggleWorkshop = (numero: number) => {
         const actual = workshopsSeleccionados ?? [];
         const siguiente = actual.includes(numero) ? actual.filter((n) => n !== numero) : [...actual, numero];
         setValue("workshopsSeleccionados", siguiente, { shouldValidate: true });
+    };
+
+    const toggleWorkshopOpenStyle = (numero: number) => {
+        const actual = workshopsOpenStyleSeleccionados ?? [];
+        const siguiente = actual.includes(numero) ? actual.filter((n) => n !== numero) : [...actual, numero];
+        setValue("workshopsOpenStyleSeleccionados", siguiente, { shouldValidate: true });
     };
 
     // El listado de "Costos" siempre muestra el precio de lista, sin el 20% de
@@ -220,12 +228,17 @@ export function StepCategoria() {
                     )}
                     {!esPublico && (
                         <li className="space-y-1.5 text-sm text-boss-gray">
+                            <p className="font-semibold text-foreground">Breaking</p>
                             <p>Workshop 1 - Fundamentos y Progresiones de Power - Bboy Alvin</p>
                             <p>Workshop 2 - Powermoves - Bboy Lil G</p>
                             <p>Workshop 3 - Transiciones y Combos - Bboy Victor</p>
+                            <p className="pt-1.5 font-semibold text-foreground">Open Style</p>
+                            <p>Workshop 1 – Hip Hop Groove – Jeremmy Morales</p>
+                            <p>Workshop 2 – Locking mastering – Alexis Vega</p>
+                            <p>Workshop 3 – Identidad en el baile – Dela MP</p>
                             <p>
-                                Los workshops serán el sábado 31 de octubre a partir de las 9:30am. Duración
-                                aproximada 1.5hrs cada workshop.
+                                Los workshops serán el sábado 31 de Octubre a partir de las 9:00am. Duración
+                                aproximada 1.5 cada workshop.
                             </p>
                         </li>
                     )}
@@ -258,6 +271,24 @@ export function StepCategoria() {
                                     className="h-4 w-4 accent-boss-red"
                                     checked={workshopsSeleccionados.includes(numero)}
                                     onChange={() => toggleWorkshop(numero)}
+                                />
+                                Workshop {numero}
+                            </label>
+                        ))}
+                    </div>
+                </Field>
+            )}
+
+            {mostrarWorkshopsOpenStyle && (
+                <Field label="Workshops Open Style (opcional, 1 a 3)">
+                    <div className="flex flex-wrap gap-4">
+                        {[1, 2, 3].map((numero) => (
+                            <label key={numero} className="flex items-center gap-2 text-sm text-foreground">
+                                <input
+                                    type="checkbox"
+                                    className="h-4 w-4 accent-boss-red"
+                                    checked={workshopsOpenStyleSeleccionados.includes(numero)}
+                                    onChange={() => toggleWorkshopOpenStyle(numero)}
                                 />
                                 Workshop {numero}
                             </label>

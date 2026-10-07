@@ -124,7 +124,7 @@ registrationsRouter.post("/", registrationCreateLimiter, async (req, res) => {
     const nombreArtistico = data.nombreArtistico || `${data.nombres} ${data.apellidos}`.trim();
     const preventaActiva = await calcularPreventaActiva();
     const precioMXNCentavos = aplicarCodigoDescuento(
-        calcularPrecioTotal(data.paqueteBase, data.workshopsSeleccionados, {
+        calcularPrecioTotal(data.paqueteBase, data.workshopsSeleccionados, data.workshopsOpenStyleSeleccionados, {
             agregarOpenStyle: data.agregarOpenStyle,
             preventaActiva,
         }),
@@ -157,6 +157,7 @@ registrationsRouter.post("/", registrationCreateLimiter, async (req, res) => {
                 tipoBoleto,
                 paqueteBase: data.paqueteBase,
                 workshopsSeleccionados: data.workshopsSeleccionados,
+                workshopsOpenStyleSeleccionados: data.workshopsOpenStyleSeleccionados,
                 agregarOpenStyle: data.agregarOpenStyle,
                 precioMXNCentavos,
             },

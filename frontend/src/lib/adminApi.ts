@@ -67,6 +67,10 @@ export type Enfrentamiento = {
     // Cuántas veces se ha repetido esta pelea por empate (0 = todavía no
     // hubo empate). Ver useSecuenciaBatalla / fase "empate".
     numeroDesempate: number;
+    // Cuántas veces presenta cada competidor antes de que los jueces
+    // califiquen (1 = lo normal; la Final se crea con 2). Ver calcularLimites
+    // en SecuenciaBatalla.tsx.
+    rondasBaile: number;
     // Solo vienen en GET /enfrentamientos (lo usa /pantalla); en-curso no las
     // manda porque una batalla activa todavía no tiene puntaje que mostrar.
     puntajeA?: number | null;
@@ -85,6 +89,7 @@ type DetallePaqueteStaff = {
     paqueteBaseLabel?: string;
     academiaCrew?: string | null;
     workshopsSeleccionados?: number[];
+    workshopsOpenStyleSeleccionados?: number[];
     agregarOpenStyle?: boolean;
 };
 

@@ -317,6 +317,8 @@ function ModalResultado({
     const paqueteBaseLabel = "paqueteBaseLabel" in resultado ? resultado.paqueteBaseLabel : undefined;
     const academiaCrew = "academiaCrew" in resultado ? resultado.academiaCrew : undefined;
     const workshopsSeleccionados = "workshopsSeleccionados" in resultado ? resultado.workshopsSeleccionados : undefined;
+    const workshopsOpenStyleSeleccionados =
+        "workshopsOpenStyleSeleccionados" in resultado ? resultado.workshopsOpenStyleSeleccionados : undefined;
     const agregarOpenStyle = "agregarOpenStyle" in resultado ? resultado.agregarOpenStyle : undefined;
     const posibleDuplicado = resultado.ok && resultado.posibleDuplicado;
     const segundosDesdeUltimoEvento = resultado.ok ? resultado.segundosDesdeUltimoEvento : undefined;
@@ -405,7 +407,11 @@ function ModalResultado({
                         )}
                     </div>
 
-                    {(paqueteBaseLabel || academiaCrew || agregarOpenStyle || (workshopsSeleccionados && workshopsSeleccionados.length > 0)) && (
+                    {(paqueteBaseLabel ||
+                        academiaCrew ||
+                        agregarOpenStyle ||
+                        (workshopsSeleccionados && workshopsSeleccionados.length > 0) ||
+                        (workshopsOpenStyleSeleccionados && workshopsOpenStyleSeleccionados.length > 0)) && (
                         <div className="w-full space-y-1.5 rounded-md border border-boss-border bg-boss-black/40 p-3 text-left text-sm">
                             {paqueteBaseLabel && (
                                 <p>
@@ -423,6 +429,12 @@ function ModalResultado({
                                 <p>
                                     <span className="text-boss-gray">Workshops: </span>
                                     <span className="text-white">{workshopsSeleccionados.join(", ")}</span>
+                                </p>
+                            )}
+                            {workshopsOpenStyleSeleccionados && workshopsOpenStyleSeleccionados.length > 0 && (
+                                <p>
+                                    <span className="text-boss-gray">Workshops Open Style: </span>
+                                    <span className="text-white">{workshopsOpenStyleSeleccionados.join(", ")}</span>
                                 </p>
                             )}
                             {agregarOpenStyle && (

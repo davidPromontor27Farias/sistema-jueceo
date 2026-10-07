@@ -134,7 +134,7 @@ export const PAQUETES_BASE_DESCRIPCION: Record<PaqueteBase, string> = {
         "Incluye: Inscripción a 1 categoría, acceso como competidor, QR personal e intransferible, perfil y foto en plataforma.",
     PUBLICO_GENERAL: "Acceso como espectador.",
     VIP_EXPERIENCE: "Entrada General / Meet & Greet / Fotografía oficial / Zona preferente / Bebida energetizante.",
-    BOSS_EXPERIENCE: "Inscripción a 1 categoría de breaking + los 3 workshops.",
+    BOSS_EXPERIENCE: "Inscripción a 1 categoria (breaking u open style) + los 3 workshops de la categoría seleccionada ",
     BOSS_VIP:
         "Inscripción a 1 categoría + 3 workshops / Meet & Greet / Foto profesional / Fila rápida / Poster oficial / Lanyard VIP / Zona preferencial / Playera oficial / Bebida energetizante.",
     SOLO_WORKSHOPS: "En la selección de 3 workshops recibe un descuento de $150.",
@@ -257,6 +257,7 @@ export interface OpcionesPrecioTotal {
 export function calcularPrecioTotal(
     paqueteBase: PaqueteBase,
     workshopsSeleccionados: number[] = [],
+    workshopsOpenStyleSeleccionados: number[] = [],
     opciones: OpcionesPrecioTotal = {},
 ): number {
     let total: number;
@@ -265,7 +266,10 @@ export function calcularPrecioTotal(
     } else if (PAQUETES_CON_WORKSHOPS_INCLUIDOS.includes(paqueteBase)) {
         total = PRECIO_MXN_CENTAVOS_POR_PAQUETE_BASE[paqueteBase];
     } else {
-        total = PRECIO_MXN_CENTAVOS_POR_PAQUETE_BASE[paqueteBase] + precioWorkshops(workshopsSeleccionados);
+        total =
+            PRECIO_MXN_CENTAVOS_POR_PAQUETE_BASE[paqueteBase] +
+            precioWorkshops(workshopsSeleccionados) +
+            precioWorkshops(workshopsOpenStyleSeleccionados);
     }
 
     if (opciones.agregarOpenStyle) {

@@ -215,6 +215,7 @@ export interface OpcionesPrecioTotal {
 export function calcularPrecioTotal(
     paqueteBase: PaqueteBase,
     workshopsSeleccionados: number[] = [],
+    workshopsOpenStyleSeleccionados: number[] = [],
     opciones: OpcionesPrecioTotal = {},
 ): number {
     let total: number;
@@ -223,7 +224,10 @@ export function calcularPrecioTotal(
     } else if (PAQUETES_CON_WORKSHOPS_INCLUIDOS.includes(paqueteBase)) {
         total = PRECIO_MXN_CENTAVOS_POR_PAQUETE_BASE[paqueteBase];
     } else {
-        total = PRECIO_MXN_CENTAVOS_POR_PAQUETE_BASE[paqueteBase] + precioWorkshops(workshopsSeleccionados);
+        total =
+            PRECIO_MXN_CENTAVOS_POR_PAQUETE_BASE[paqueteBase] +
+            precioWorkshops(workshopsSeleccionados) +
+            precioWorkshops(workshopsOpenStyleSeleccionados);
     }
 
     if (opciones.agregarOpenStyle) {

@@ -33,7 +33,16 @@ const STEPS: { title: string; fields: FieldName[] }[] = [
     },
     {
         title: "Categoría",
-        fields: ["categoria", "estado", "ciudad", "academiaCrew", "paqueteBase", "workshopsSeleccionados", "agregarOpenStyle"],
+        fields: [
+            "categoria",
+            "estado",
+            "ciudad",
+            "academiaCrew",
+            "paqueteBase",
+            "workshopsSeleccionados",
+            "workshopsOpenStyleSeleccionados",
+            "agregarOpenStyle",
+        ],
     },
     { title: "Contacto y foto", fields: ["correo", "telefono", "instagram", "contactoEmergencia", "fotoUrl"] },
     { title: "Legal", fields: ["aceptaReglamento", "aceptaAvisoPrivacidad", "aceptaPoliticaCancelacion"] },
@@ -57,7 +66,7 @@ export function RegistroWizard({ modoPrueba }: { modoPrueba: boolean }) {
     const methods = useForm<z.input<typeof registrationFormSchema>, unknown, RegistrationFormValues>({
         mode: "onChange",
         resolver: zodResolver(registrationFormSchema),
-        defaultValues: { workshopsSeleccionados: [], agregarOpenStyle: false },
+        defaultValues: { workshopsSeleccionados: [], workshopsOpenStyleSeleccionados: [], agregarOpenStyle: false },
     });
     const {
         handleSubmit,

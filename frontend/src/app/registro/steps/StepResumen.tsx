@@ -26,6 +26,7 @@ export function StepResumen({ preventaEstado }: { preventaEstado: PreventaEstado
     const academiaCrew = watch("academiaCrew");
     const paqueteBase = watch("paqueteBase");
     const workshopsSeleccionados = watch("workshopsSeleccionados") ?? [];
+    const workshopsOpenStyleSeleccionados = watch("workshopsOpenStyleSeleccionados") ?? [];
     const agregarOpenStyle = watch("agregarOpenStyle") ?? false;
     const fotoUrl = watch("fotoUrl");
 
@@ -34,7 +35,10 @@ export function StepResumen({ preventaEstado }: { preventaEstado: PreventaEstado
     // el backend siempre recalcula el total real al pagar.
     const preventaActiva = preventaEstado?.activa ?? preventaVigentePorFecha();
     const precioTotal = paqueteBase
-        ? calcularPrecioTotal(paqueteBase, workshopsSeleccionados, { agregarOpenStyle, preventaActiva })
+        ? calcularPrecioTotal(paqueteBase, workshopsSeleccionados, workshopsOpenStyleSeleccionados, {
+              agregarOpenStyle,
+              preventaActiva,
+          })
         : 0;
 
     const calificaParaPreventa = preventaActiva && !!paqueteBase && paqueteElegiblePreventa(paqueteBase);

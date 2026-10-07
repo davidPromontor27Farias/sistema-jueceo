@@ -119,7 +119,7 @@ async function main() {
             const correo = `prueba.${normalizar(config.categoria)}.${i}.${sufijo}@thebossbreaking.com`;
             const paqueteBase = esPublico ? "PUBLICO_GENERAL" : "COMPETIDOR";
             const tipoBoleto = tipoBoletoPorCategoria(config.categoria);
-            const precioMXNCentavos = calcularPrecioTotal(paqueteBase, [], { agregarOpenStyle: false, preventaActiva: false });
+            const precioMXNCentavos = calcularPrecioTotal(paqueteBase, [], [], { agregarOpenStyle: false, preventaActiva: false });
             const competidorId = await siguienteCompetidorId(usados);
             const qrToken = randomUUID();
 

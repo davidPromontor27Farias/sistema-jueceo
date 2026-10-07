@@ -27,6 +27,7 @@ const CAMPOS_STAFF = {
     paqueteBase: true,
     academiaCrew: true,
     workshopsSeleccionados: true,
+    workshopsOpenStyleSeleccionados: true,
     agregarOpenStyle: true,
 };
 
@@ -51,6 +52,7 @@ function aItemStaff(registro: RegistroStaff) {
             (PAQUETES_BASE_LABEL as Record<string, string>)[registro.paqueteBase] ?? registro.paqueteBase,
         academiaCrew: registro.academiaCrew,
         workshopsSeleccionados: registro.workshopsSeleccionados,
+        workshopsOpenStyleSeleccionados: registro.workshopsOpenStyleSeleccionados,
         agregarOpenStyle: registro.agregarOpenStyle,
     };
 }

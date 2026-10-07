@@ -281,6 +281,14 @@ model Enfrentamiento {
   // intentarResolverEnfrentamiento en backend/src/routes/competencia.ts.
   numeroDesempate Int @default(0)
 
+  // Cuántas veces presenta cada competidor antes de que los jueces
+  // califiquen (1 = lo de siempre, A baila una vez y B baila una vez). Las
+  // Finales se crean con 2 (ver filasParaRonda en
+  // backend/src/routes/competencia.ts): A1, B1, A2, B2 y hasta ahí entran
+  // los jueces — sigue siendo UNA sola calificación por juez al final,
+  // sobre el total de ambas vueltas, no una calificación por vuelta.
+  rondasBaile Int @default(1)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -432,6 +440,7 @@ model Registration {
   tipoBoleto            TipoBoleto
   paqueteBase           PaqueteBase
   workshopsSeleccionados Int[]      @default([])
+  workshopsOpenStyleSeleccionados Int[] @default([])
   agregarOpenStyle      Boolean     @default(false)
   precioMXNCentavos     Int
   estatusPago           EstatusPago @default(PENDIENTE)
