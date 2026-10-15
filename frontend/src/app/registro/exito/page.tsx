@@ -6,7 +6,7 @@ import QrStatus from "./QrStatus";
 export default function RegistroExitoPage() {
     return (
         <main className="flex min-h-screen flex-col items-center justify-center bg-boss-black px-4 py-16 text-center">
-            <Image src="/the-boss-logo.png" alt="THE BOSS — Breaking Battles" width={160} height={133} />
+            <Image src="/the-boss-logo.png" alt="THE BOSS — Breaking Battles" width={200} height={133} />
             <Suspense
                 fallback={
                     <p className="mt-3 max-w-md text-boss-gray">Confirmando tu pago con Stripe...</p>

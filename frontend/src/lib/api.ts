@@ -174,3 +174,74 @@ export async function getVistaRegistros(token: string): Promise<ApiResult<VistaR
         return { ok: false, error: "No se pudo conectar con el servidor." };
     }
 }
+
+export type DesglosePuntajeVista = {
+    tecnica: number;
+    ejecucion: number;
+    vocabulario: number;
+    musicalidad: number;
+    originalidad: number;
+};
+
+export type MiDesgloseBatalla = {
+    id: string;
+    ronda: string;
+    rivalNombre: string | null;
+    gane: boolean;
+    miPuntaje: number | null;
+    miDesglose: DesglosePuntajeVista | null;
+};
+
+export type MiDesglose = {
+    competidor: { nombre: string; competidorId: string | null; categoria: Categoria };
+    preseleccion: { puntajeTotal: number; desglose: DesglosePuntajeVista } | null;
+    batallas: MiDesgloseBatalla[];
+};
+
+export type MiDesgloseResultadoBusqueda = {
+    id: string;
+    nombre: string;
+    categoria: Categoria;
+    competidorId: string | null;
+};
+
+// Busca por nombre de competidor (Bboy/Bgirl name) — devuelve candidatos
+// para desambiguar si hay más de uno con nombre parecido (ver
+// Consulta individual de desglose).
+export async function buscarMiDesglose(nombre: string): Promise<ApiResult<{ resultados: MiDesgloseResultadoBusqueda[] }>> {
+    try {
+        const params = new URLSearchParams({ nombre });
+        const response = await fetch(`${API_URL}/api/competencia/mi-desglose/buscar?${params.toString()}`);
+        const data = (await parseJsonSafely(response)) as ({ resultados: MiDesgloseResultadoBusqueda[] } & { error?: string }) | null;
+
+        if (!response.ok || !data) {
+            return { ok: false, error: data?.error ?? "No se pudo buscar." };
+        }
+
+        return { ok: true, data };
+    } catch (error) {
+        console.error("Error al conectar con /api/competencia/mi-desglose/buscar", error);
+        return { ok: false, error: "No se pudo conectar con el servidor." };
+    }
+}
+
+// Consulta pública (sin login) del desglose detallado de un competidor por
+// su id (obtenido con buscarMiDesglose) — ver Consulta individual de
+// desglose: el detalle por rubro ya no se proyecta en la pantalla pública,
+// se ve acá desde el teléfono.
+export async function getMiDesglose(id: string): Promise<ApiResult<MiDesglose>> {
+    try {
+        const params = new URLSearchParams({ id });
+        const response = await fetch(`${API_URL}/api/competencia/mi-desglose?${params.toString()}`);
+        const data = (await parseJsonSafely(response)) as (MiDesglose & { error?: string }) | null;
+
+        if (!response.ok || !data) {
+            return { ok: false, error: data?.error ?? "No se pudo consultar el desglose." };
+        }
+
+        return { ok: true, data };
+    } catch (error) {
+        console.error("Error al conectar con /api/competencia/mi-desglose", error);
+        return { ok: false, error: "No se pudo conectar con el servidor." };
+    }
+}

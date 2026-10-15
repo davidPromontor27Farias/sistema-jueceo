@@ -18,6 +18,11 @@ const DURACION_BRACKET_MS = 8_000;
 // Cuánto se queda /pantalla mostrando el aviso "¡EMPATE!" antes de reiniciar
 // la secuencia completa para la ronda de desempate (ver iniciarEmpate).
 const DURACION_EMPATE_MS = 6_000;
+// Cuenta regresiva de suspenso (5, 4, 3, 2, 1) antes de revelar el
+// resultado — solo para Semifinal y Final (ver RONDAS_CON_CONTEO_SUSPENSO),
+// nunca para rondas tempranas.
+const DURACION_CONTEO_MS = 5_000;
+const RONDAS_CON_CONTEO_SUSPENSO = new Set(["Semifinal", "Final"]);
 
 type FaseSecuencia =
     | "normal"
@@ -28,6 +33,7 @@ type FaseSecuencia =
     | "turno_b"
     | "esperando_jueces"
     | "empate"
+    | "conteo"
     | "resultados"
     | "ganador"
     | "bracket";
@@ -56,18 +62,21 @@ type LimitesVuelta = {
 };
 
 // Límites (en ms desde que arrancó la batalla) de cada fase, UNA entrada por
-// vuelta (rondasBaile: 1 de costumbre, 2 en las Finales — ver
-// filasParaRonda en backend/src/routes/competencia.ts). Si el SUPER_ADMIN
-// cortó un turno (ver POST /enfrentamientos/:id/cortar-turno), ese corte es
-// UN solo timestamp absoluto en toda la base de datos (no uno por vuelta): se
-// le asigna a la vuelta cuya ventana SIN cortar lo contiene — así un corte en
+// vuelta (rondasBaile: 1 de costumbre, 2 en Semifinal, 3 en la Final — ver
+// filasParaRonda en backend/src/routes/competencia.ts). `enf.iniciadoEn` es
+// la referencia fija de "cuándo arrancó" (a diferencia de updatedAt, que se
+// mueve con cualquier cambio — cortar un turno lo pisaba y desincronizaba
+// todo el cronómetro en vez de acortarlo). Si el SUPER_ADMIN cortó un turno
+// (ver POST /enfrentamientos/:id/cortar-turno), ese corte es UN solo
+// timestamp absoluto en toda la base de datos (no uno por vuelta): se le
+// asigna a la vuelta cuya ventana SIN cortar lo contiene — así un corte en
 // la vuelta 1 no afecta por accidente el cálculo de la vuelta 2. Limitación
 // conocida y aceptada: si se corta el mismo lado (A o B) en más de una
 // vuelta de la misma Final, solo el corte más reciente queda guardado (el
-// campo se sobreescribe) — cortar una vez por lado alcanza para el caso real
-// de "ya terminó, no hace falta esperar el resto del minuto".
+// campo se sobreescribe) — para eso está el botón "Finalizar rondas de
+// baile" (ver bailesFinalizadosEn), que no depende de estos cálculos.
 export function calcularLimites(enf: Enfrentamiento): { finAnuncio: number; vueltas: LimitesVuelta[] } {
-    const inicio = new Date(enf.updatedAt).getTime();
+    const inicio = new Date(enf.iniciadoEn ?? enf.updatedAt).getTime();
     const finAnuncio = DURACION_ANUNCIO_VS_MS;
     const totalVueltas = Math.max(1, enf.rondasBaile || 1);
     const cortoA = enf.turnoACortadoEn ? new Date(enf.turnoACortadoEn).getTime() - inicio : null;
@@ -151,15 +160,52 @@ export function useSecuenciaBatalla(enfrentamientos: Enfrentamiento[]): EstadoSe
     };
 
     // Se intercala entre "esperando_jueces" y "ganador": mismo panel VS de
-    // siempre, pero ya con el desglose de puntajes de ambos competidores
-    // debajo de su nombre. Si el enfrentamiento se resolvió sin puntajes
-    // (respaldo manual sin calificaciones) esto no se llama, se salta directo
-    // a iniciarGanador.
+    // siempre, pero ya con el puntaje TOTAL de ambos competidores debajo de
+    // su nombre (sin desglose por rubro — ver Simplificación del resultado
+    // en pantalla principal; el desglose completo solo lo puede consultar
+    // cada competidor desde su teléfono, ver /mi-desglose). Si el
+    // enfrentamiento se resolvió sin puntajes (respaldo manual sin
+    // calificaciones) esto no se llama, se salta directo a iniciarGanador.
     const iniciarResultados = (enf: Enfrentamiento) => {
         limpiarTimers();
         setActivo(enf);
         setFase("resultados");
         timeoutRef.current = setTimeout(() => iniciarGanador(enf), DURACION_RESULTADOS_MS);
+    };
+
+    // Suspenso antes de revelar el resultado: cuenta 5, 4, 3, 2, 1 y
+    // entonces sigue la secuencia normal (resultados si hay puntajes, si no
+    // directo a ganador). Solo se usa para Semifinal y Final (ver
+    // iniciarRevelacion / RONDAS_CON_CONTEO_SUSPENSO) — las rondas tempranas
+    // van directo, sin conteo.
+    const iniciarConteo = (enf: Enfrentamiento, alTerminar: () => void) => {
+        limpiarTimers();
+        setActivo(enf);
+        setFase("conteo");
+        let restantes = Math.ceil(DURACION_CONTEO_MS / 1000);
+        setSegundosRestantes(restantes);
+        intervalRef.current = setInterval(() => {
+            restantes -= 1;
+            setSegundosRestantes(Math.max(restantes, 0));
+        }, 1000);
+        timeoutRef.current = setTimeout(alTerminar, DURACION_CONTEO_MS);
+    };
+
+    // Punto de entrada tras "esperando_jueces" cuando ya hay ganador: en
+    // Semifinal y Final pasa primero por el conteo de suspenso antes de
+    // mostrar nada del resultado; en el resto de las rondas va directo,
+    // igual que siempre.
+    const iniciarRevelacion = (enf: Enfrentamiento) => {
+        // puntajeA/B (no desgloseA/B): el endpoint público de /enfrentamientos
+        // ya no manda el desglose por rubro (ver Simplificación del resultado
+        // en pantalla principal), así que esto ya no puede depender de que
+        // venga — solo de que haya puntaje total que mostrar.
+        const siguiente = () => (enf.puntajeA != null && enf.puntajeB != null ? iniciarResultados(enf) : iniciarGanador(enf));
+        if (RONDAS_CON_CONTEO_SUSPENSO.has(enf.ronda)) {
+            iniciarConteo(enf, siguiente);
+        } else {
+            siguiente();
+        }
     };
 
     const iniciarTurno = (faseTurno: "turno_a" | "turno_b", enf: Enfrentamiento, duracionMs: number, vueltaActual: number) => {
@@ -285,10 +331,10 @@ export function useSecuenciaBatalla(enfrentamientos: Enfrentamiento[]): EstadoSe
 
     // Detecta que la batalla que esperábamos ya tiene ganador — o que empató
     // y el backend ya lanzó una ronda de desempate (numeroDesempate subió,
-    // sigue EN_CURSO sin ganador). Si hay ganador y desglose de puntajes (se
-    // calificó con jueces, no fue respaldo manual) pasa primero por
-    // "resultados"; si no hay desglose, va directo a "ganador"; si empató,
-    // pasa por el aviso de "empate" antes de repetir la secuencia completa.
+    // sigue EN_CURSO sin ganador). Si hay ganador, pasa a iniciarRevelacion
+    // (conteo de suspenso solo en Semifinal/Final, luego resultados/ganador
+    // según haya puntajes o no); si empató, pasa por el aviso de "empate"
+    // antes de repetir la secuencia completa.
     useEffect(() => {
         if (fase !== "esperando_jueces" || !activo) return;
         const actualizado = enfrentamientos.find((e) => e.id === activo.id);
@@ -301,10 +347,8 @@ export function useSecuenciaBatalla(enfrentamientos: Enfrentamiento[]): EstadoSe
         Promise.resolve().then(() => {
             if (huboEmpateNuevo) {
                 iniciarEmpate(actualizado);
-            } else if (actualizado.desgloseA && actualizado.desgloseB) {
-                iniciarResultados(actualizado);
             } else {
-                iniciarGanador(actualizado);
+                iniciarRevelacion(actualizado);
             }
         });
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -340,6 +384,22 @@ export function useSecuenciaBatalla(enfrentamientos: Enfrentamiento[]): EstadoSe
         });
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [enfrentamientos, fase, activo, vuelta]);
+
+    // Detecta que el SUPER_ADMIN marcó "Finalizar rondas de baile" (ver
+    // bailesFinalizadosEn) mientras esta pantalla todavía está mostrando
+    // alguna presentación o turno: salta directo a "esperando_jueces" sin
+    // importar en qué vuelta/lado esté — es la señal autoritativa de que ya
+    // se acabó de bailar, por encima de cualquier cálculo de tiempo.
+    useEffect(() => {
+        const enPresentacionOTurno =
+            fase === "presentando_a" || fase === "turno_a" || fase === "presentando_b" || fase === "turno_b";
+        if (!enPresentacionOTurno || !activo) return;
+        const actualizado = enfrentamientos.find((e) => e.id === activo.id);
+        if (!actualizado || activo.bailesFinalizadosEn || !actualizado.bailesFinalizadosEn) return;
+
+        Promise.resolve().then(() => iniciarEsperando(actualizado));
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [enfrentamientos, fase, activo]);
 
     useEffect(() => limpiarTimers, []);
 
@@ -516,9 +576,22 @@ const CRITERIOS_DESGLOSE: { clave: keyof DesglosePuntaje; label: string }[] = [
     { clave: "originalidad", label: "Originalidad" },
 ];
 
-// Desglose por sección + puntaje total, debajo del nombre de un competidor en
-// la fase "resultados": una tarjeta por sección (nombre arriba, calificación
-// abajo), en fila horizontal, con el color de su lado (azul/rojo).
+// Solo el puntaje TOTAL de un competidor en la fase "resultados" — sin
+// desglose por rubro (ver Simplificación del resultado en pantalla
+// principal). El desglose completo (DesgloseCompetidor, debajo) ya no se usa
+// en la pantalla pública, solo en /mi-desglose.
+function PuntajeTotalCompetidor({ puntaje, color }: { puntaje: number; color: string }) {
+    return (
+        <p className="relative z-10 font-display text-5xl sm:text-7xl" style={{ color }}>
+            {puntaje}
+        </p>
+    );
+}
+
+// Desglose por sección + puntaje total, debajo del nombre de un competidor.
+// Ya no se usa en la pantalla pública (ver PuntajeTotalCompetidor, arriba) —
+// solo lo consume la página de consulta individual /mi-desglose, que sí
+// puede mostrar el desglose completo a cada competidor desde su teléfono.
 export function DesgloseCompetidor({ desglose, puntaje, color }: { desglose: DesglosePuntaje; puntaje: number; color: string }) {
     return (
         <div className="relative z-10 flex flex-col items-center gap-2">
@@ -663,7 +736,27 @@ export function SecuenciaOverlay({
                 />
             )}
 
-            {fase === "resultados" && enfrentamiento.desgloseA && enfrentamiento.desgloseB && (
+            {fase === "conteo" && (
+                <PanelVersus
+                    enfrentamiento={enfrentamiento}
+                    centro={
+                        <div className="flex flex-col items-center gap-2">
+                            <span className="font-display text-lg uppercase tracking-widest text-white sm:text-2xl">
+                                Revelando resultado en...
+                            </span>
+                            <span
+                                key={segundosRestantes}
+                                className="animate-numero-pop font-display text-7xl text-white sm:text-9xl"
+                                style={{ textShadow: "0 0 28px rgba(255,255,255,0.8), 0 0 56px rgba(255,255,255,0.5)" }}
+                            >
+                                {segundosRestantes}
+                            </span>
+                        </div>
+                    }
+                />
+            )}
+
+            {fase === "resultados" && hayPuntajes && (
                 <PanelVersus
                     enfrentamiento={enfrentamiento}
                     centro={
@@ -671,20 +764,8 @@ export function SecuenciaOverlay({
                             Resultados
                         </p>
                     }
-                    debajoA={
-                        <DesgloseCompetidor
-                            desglose={enfrentamiento.desgloseA}
-                            puntaje={enfrentamiento.puntajeA ?? 0}
-                            color="var(--color-boss-blue)"
-                        />
-                    }
-                    debajoB={
-                        <DesgloseCompetidor
-                            desglose={enfrentamiento.desgloseB}
-                            puntaje={enfrentamiento.puntajeB ?? 0}
-                            color="var(--color-boss-red)"
-                        />
-                    }
+                    debajoA={<PuntajeTotalCompetidor puntaje={enfrentamiento.puntajeA ?? 0} color="var(--color-boss-blue)" />}
+                    debajoB={<PuntajeTotalCompetidor puntaje={enfrentamiento.puntajeB ?? 0} color="var(--color-boss-red)" />}
                 />
             )}
 

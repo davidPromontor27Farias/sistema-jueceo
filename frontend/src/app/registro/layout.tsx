@@ -17,7 +17,7 @@ export const metadata: Metadata = {
         url: URL_REGISTRO,
         title: "THE BOSS — Breaking Event",
         description: DESCRIPCION,
-        images: [{ url: "/the-boss-logo.png", width: 1254, height: 1254, alt: "THE BOSS — Breaking Event" }],
+        images: [{ url: "/the-boss-logo.png", width: 1537, height: 1023, alt: "THE BOSS — Breaking Event" }],
     },
 };
 

@@ -309,11 +309,7 @@ function PantallaPublicaContenido() {
         return (
             <>
                 <ModoPruebaBadge />
-                <SecuenciaPreseleccionOverlay
-                    fase={secuenciaPreseleccion.fase}
-                    turno={secuenciaPreseleccion.turno}
-                    segundosRestantes={secuenciaPreseleccion.segundosRestantes}
-                />
+                <SecuenciaPreseleccionOverlay fase={secuenciaPreseleccion.fase} turno={secuenciaPreseleccion.turno} />
             </>
         );
     }
@@ -342,7 +338,7 @@ function PantallaPublicaContenido() {
         return (
             <main className="flex min-h-screen items-center justify-center bg-boss-black">
                 <ModoPruebaBadge />
-                <Image src="/the-boss-logo.png" alt="THE BOSS — Breaking Battles" width={280} height={233} />
+                <Image src="/the-boss-logo.png" alt="THE BOSS — Breaking Battles" width={350} height={233} />
             </main>
         );
     }
@@ -359,7 +355,7 @@ function PantallaPublicaContenido() {
         >
             <ModoPruebaBadge />
             {!esVistaBrackets && (
-                <Image src="/the-boss-logo.png" alt="THE BOSS — Breaking Battles" width={120} height={100} className="mx-auto" />
+                <Image src="/the-boss-logo.png" alt="THE BOSS — Breaking Battles" width={150} height={100} className="mx-auto" />
             )}
             {estado.vista === "GANADORES" && (
                 <h1 className="mt-4 font-display text-3xl uppercase tracking-widest text-boss-red">Campeones</h1>

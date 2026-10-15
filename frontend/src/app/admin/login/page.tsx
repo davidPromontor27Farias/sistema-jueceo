@@ -31,7 +31,7 @@ export default function AdminLoginPage() {
 
     return (
         <main className="flex min-h-screen flex-col items-center justify-center bg-boss-black px-4 py-16">
-            <Image src="/the-boss-logo.png" alt="THE BOSS — Breaking Battles" width={140} height={116} priority />
+            <Image src="/the-boss-logo.png" alt="THE BOSS — Breaking Battles" width={174} height={116} priority />
 
             <h1 className="mt-6 font-display text-2xl uppercase tracking-wide text-white">Panel de administración</h1>
 

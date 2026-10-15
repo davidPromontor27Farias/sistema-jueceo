@@ -2,9 +2,12 @@
 
 import { useEffect, useState } from "react";
 import { RequireRol } from "../layout";
+import { useAdminSession } from "../../AdminSessionContext";
 import { CATEGORIAS, type Categoria } from "@/config/catalog";
 import {
     cortarTurno,
+    cortarTurnoPreseleccion,
+    finalizarBaile,
     generarBracket,
     generarTopBracket,
     getBatallasEnCurso,
@@ -12,12 +15,11 @@ import {
     getEnfrentamientos,
     getEscenariosDeCategoria,
     getPantallaEstado,
-    getResultadosPreseleccion,
+    getResultadosPreseleccionStaff,
     getTurnoPreseleccionActual,
     iniciarPreseleccion,
     patchCategoriaEstado,
     patchPantallaEstado,
-    siguienteTurnoPreseleccion,
     updateEnfrentamiento,
     type CategoriaEstado,
     type CompetidorResumen,
@@ -278,7 +280,7 @@ function PanelPreseleccion({ categoria, estatus }: { categoria: Categoria; estat
         const poll = async () => {
             const [resEscenarios, resResultados] = await Promise.all([
                 getEscenariosDeCategoria(categoria),
-                getResultadosPreseleccion(categoria),
+                getResultadosPreseleccionStaff(categoria),
             ]);
             if (cancelado) return;
             if (resEscenarios.ok) setEscenarios(resEscenarios.data.escenarios);
@@ -407,8 +409,12 @@ function PanelPreseleccion({ categoria, estatus }: { categoria: Categoria; estat
 }
 
 // Un sub-panel de turno por escenario activo: quién está en tarima ahora
-// mismo en ESE escenario, con su propio botón "Siguiente" (misma cola
-// independiente, ver Preselección Paralela Multiescenario).
+// mismo en ESE escenario (cola independiente, ver Preselección Paralela
+// Multiescenario). Sin cronómetro: el único control manual es "Cortar
+// rutina" cuando el competidor termina de presentarse (recién ahí los
+// jueces pueden calificarlo) — en cuanto califican todos, el backend sube
+// solo al siguiente de la cola, sin ningún botón (ver avanzarTurnoPreseleccion
+// en backend/src/routes/competencia.ts).
 function TurnoEscenarioPanel({
     categoria,
     escenarioId,
@@ -419,7 +425,7 @@ function TurnoEscenarioPanel({
     escenarioNombre: string;
 }) {
     const [turno, setTurno] = useState<TurnoPreseleccion>(null);
-    const [avanzando, setAvanzando] = useState(false);
+    const [cortando, setCortando] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
@@ -436,11 +442,11 @@ function TurnoEscenarioPanel({
         };
     }, [categoria, escenarioId]);
 
-    const avanzarTurno = async () => {
-        setAvanzando(true);
+    const cortarRutina = async () => {
+        setCortando(true);
         setError(null);
-        const resultado = await siguienteTurnoPreseleccion(categoria, escenarioId);
-        setAvanzando(false);
+        const resultado = await cortarTurnoPreseleccion(categoria, escenarioId);
+        setCortando(false);
         if (!resultado.ok) {
             setError(resultado.error);
             return;
@@ -452,19 +458,32 @@ function TurnoEscenarioPanel({
         <div className="rounded-md border border-boss-border bg-boss-black/40 p-3">
             <p className="text-xs font-semibold uppercase tracking-widest text-boss-gray">{escenarioNombre}</p>
             <div className="mt-1 flex flex-wrap items-center justify-between gap-3">
-                <p className="font-display text-lg uppercase text-white">
-                    {turno?.participante
-                        ? turno.participante.nombreArtistico || `${turno.participante.nombres} ${turno.participante.apellidos}`
-                        : "— nadie —"}
-                </p>
-                <button
-                    type="button"
-                    onClick={avanzarTurno}
-                    disabled={avanzando}
-                    className="rounded-md bg-boss-red px-4 py-2 text-xs font-semibold uppercase tracking-wide text-white transition-colors hover:bg-boss-red-dark disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                    {avanzando ? "..." : "Siguiente"}
-                </button>
+                <div>
+                    <p className="font-display text-lg uppercase text-white">
+                        {turno?.participante
+                            ? turno.participante.nombreArtistico || `${turno.participante.nombres} ${turno.participante.apellidos}`
+                            : "— nadie —"}
+                    </p>
+                    {turno?.participante && (
+                        <p className="text-xs text-boss-gray">
+                            {!turno.cortado
+                                ? "Presentándose — todavía no se corta la rutina"
+                                : turno.calificacionesRecibidas >= turno.juecesActivos
+                                  ? "Avanzando al siguiente automáticamente…"
+                                  : `${turno.calificacionesRecibidas}/${turno.juecesActivos} jueces calificaron`}
+                        </p>
+                    )}
+                </div>
+                {turno?.participante && !turno.cortado && (
+                    <button
+                        type="button"
+                        onClick={cortarRutina}
+                        disabled={cortando}
+                        className="rounded-md border border-boss-red px-3 py-2 text-xs font-semibold uppercase tracking-wide text-boss-red transition-colors hover:bg-boss-red hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                        {cortando ? "..." : "Cortar rutina"}
+                    </button>
+                )}
             </div>
             {error && <p className="mt-2 text-xs font-medium text-red-400">{error}</p>}
         </div>
@@ -472,6 +491,10 @@ function TurnoEscenarioPanel({
 }
 
 function PanelEnfrentamientos({ categoria }: { categoria: Categoria }) {
+    const { admin } = useAdminSession();
+    // Cortar turno y Finalizar rondas de baile son solo del admin general —
+    // STAFF_JUECEO entra a este panel pero no puede tocar las presentaciones.
+    const esSuperAdmin = admin?.rol === "SUPER_ADMIN";
     const [enfrentamientos, setEnfrentamientos] = useState<Enfrentamiento[] | null>(null);
     const [enCurso, setEnCurso] = useState<EnfrentamientoEnCurso[]>([]);
     const [error, setError] = useState<string | null>(null);
@@ -597,6 +620,9 @@ function PanelEnfrentamientos({ categoria }: { categoria: Categoria }) {
                                                         Iniciar batalla
                                                     </button>
                                                 )}
+                                                {esSuperAdmin && enf.estatus === "EN_CURSO" && (
+                                                    <BotonFinalizarBaile enfrentamiento={enf} onFinalizado={cargar} />
+                                                )}
                                             </div>
 
                                             <div className="mt-2 flex flex-wrap items-center gap-3">
@@ -617,7 +643,7 @@ function PanelEnfrentamientos({ categoria }: { categoria: Categoria }) {
                                                 )}
                                             </div>
 
-                                            {secuencia.enfrentamiento?.id === enf.id && (
+                                            {esSuperAdmin && secuencia.enfrentamiento?.id === enf.id && (
                                                 <BotonCortarTurno
                                                     fase={secuencia.fase}
                                                     segundosRestantes={secuencia.segundosRestantes}
@@ -657,9 +683,55 @@ function PanelEnfrentamientos({ categoria }: { categoria: Categoria }) {
     );
 }
 
-// Le da al SUPER_ADMIN/STAFF_JUECEO el mismo cronómetro que ve la pantalla
-// pública, más un botón para cortar el turno del competidor en tabla antes de
-// que se agote el tiempo (ej. terminó a los 45s de un turno de 60s) — así el
+// Solo SUPER_ADMIN: cuando el bailarín termina antes de tiempo (cualquier
+// vuelta, no solo la última), este botón habilita de inmediato el envío de
+// calificación de los jueces sin esperar el tiempo nominal completo — ver
+// bailesFinalizadosEn. Se muestra mientras la batalla está EN_CURSO y no se
+// haya marcado ya.
+function BotonFinalizarBaile({
+    enfrentamiento,
+    onFinalizado,
+}: {
+    enfrentamiento: Enfrentamiento;
+    onFinalizado: () => void;
+}) {
+    const [enviando, setEnviando] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    if (enfrentamiento.bailesFinalizadosEn) {
+        return <span className="text-xs uppercase tracking-wide text-boss-green">Rondas de baile finalizadas</span>;
+    }
+
+    const onFinalizar = async () => {
+        setEnviando(true);
+        setError(null);
+        const resultado = await finalizarBaile(enfrentamiento.id);
+        setEnviando(false);
+        if (!resultado.ok) {
+            setError(resultado.error);
+            return;
+        }
+        onFinalizado();
+    };
+
+    return (
+        <span className="flex items-center gap-2">
+            <button
+                type="button"
+                onClick={onFinalizar}
+                disabled={enviando}
+                className="rounded-md border border-boss-red px-2.5 py-1 text-xs font-semibold uppercase tracking-wide text-boss-red transition-colors hover:bg-boss-red hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+            >
+                {enviando ? "..." : "Finalizar rondas de baile"}
+            </button>
+            {error && <span className="text-xs font-medium text-red-400">{error}</span>}
+        </span>
+    );
+}
+
+// Le da al SUPER_ADMIN el mismo cronómetro que ve la pantalla pública, más
+// un botón para cortar el turno del competidor en tabla antes de que se
+// agote el tiempo (ej. terminó a los 45s de un turno de 60s) — así el
 // contrincante no tiene que esperar el resto del cronómetro para pasar.
 function BotonCortarTurno({
     fase,

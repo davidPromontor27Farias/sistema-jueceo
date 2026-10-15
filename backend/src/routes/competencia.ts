@@ -4,10 +4,10 @@ import { prisma } from "../lib/prisma";
 import { requireRole } from "../middleware/requireAuth";
 import { sinIndefinidos } from "../lib/utils";
 import { modoPruebaActivo } from "../lib/modoEvento";
+import { miDesgloseLimiter } from "../lib/rateLimit";
 import {
     emparejarAleatorio,
     emparejarConSiembra,
-    emparejarPorPosicion,
     nombreRonda,
     potenciaDe2MasGrandeQueNoExceda,
     repartirEnLotes,
@@ -100,19 +100,25 @@ interface FilaRondaNueva {
 }
 
 // Cuántas veces presenta cada quien antes de que los jueces califiquen: lo de
-// siempre (1) salvo la Final, que son 2 vueltas completas (A1, B1, A2, B2) y
-// hasta ahí entran los jueces — sigue siendo una sola calificación por juez,
-// sobre el total de ambas vueltas (ver rondasBaile en schema.prisma y
+// siempre (1) para rondas tempranas, 2 en Semifinal y 3 en la Final — hasta
+// ahí entran los jueces, sigue siendo una sola calificación por juez, sobre
+// el total de todas las vueltas (ver rondasBaile en schema.prisma y
 // calcularLimites en frontend/src/app/pantalla/SecuenciaBatalla.tsx).
 function rondasBailePorNombre(nombreDeRonda: string): number {
-    return nombreDeRonda === "Final" ? 2 : 1;
+    if (nombreDeRonda === "Final") return 3;
+    if (nombreDeRonda === "Semifinal") return 2;
+    return 1;
 }
 
 // Arma las filas de una ronda a partir de la lista de participantes (ya
-// emparejados por `emparejador`); cada slot sin competidorB es un bye (avanza
-// sin pelear, ya FINALIZADO con ganador = él mismo). El orden de la lista de
-// slots ES el orden de posición en el árbol (campo `orden`) — no se reordena,
-// para que las rondas siguientes conecten con el partido real.
+// emparejados por `emparejador`, mejor seed primero dentro de cada pareja).
+// Lado azul y lado rojo: `emparejador` entrega competidorA como el mejor
+// sembrado/puntaje de la pareja — acá se invierte a propósito, porque en la
+// base de datos competidorA = lado AZUL = quien siempre inicia la batalla, y
+// la regla del reglamento es que inicia el más débil (menor puntaje), no el
+// más fuerte. competidorB = lado ROJO = el más fuerte. En un bye no hay
+// rival, así que no hay nada que invertir. El orden de la lista de slots ES
+// el orden de posición en el árbol (campo `orden`).
 function filasParaRonda(
     categoria: Categoria,
     rondaNumero: number,
@@ -123,26 +129,109 @@ function filasParaRonda(
     const slots = emparejador(participantes);
     const rondasBaile = rondasBailePorNombre(nombreDeRonda);
 
-    return slots.map((slot, orden) => ({
-        categoria,
-        ronda: nombreDeRonda,
-        rondaNumero,
-        orden,
-        competidorAId: slot.competidorA,
-        competidorBId: slot.competidorB,
-        estatus: slot.competidorB ? "PENDIENTE" : "FINALIZADO",
-        ganadorId: slot.competidorB ? null : slot.competidorA,
-        rondasBaile,
-    }));
+    return slots.map((slot, orden) => {
+        const hayRival = slot.competidorB !== null;
+        const competidorAId = hayRival ? slot.competidorB! : slot.competidorA;
+        const competidorBId = hayRival ? slot.competidorA : null;
+        return {
+            categoria,
+            ronda: nombreDeRonda,
+            rondaNumero,
+            orden,
+            competidorAId,
+            competidorBId,
+            estatus: hayRival ? "PENDIENTE" : "FINALIZADO",
+            ganadorId: hayRival ? null : competidorAId,
+            rondasBaile,
+        };
+    });
+}
+
+interface PuntajeAcumulado {
+    total: number;
+    originalidad: number;
+    presentadoEn: Date;
+}
+
+// Puntaje acumulado de un competidor a través de TODAS las fases jugadas
+// hasta ahora en la categoría: su puntaje de Preselección (si aplica) más la
+// suma de lo que recibió en cada batalla 1v1 que ya ganó (ronda decisiva de
+// cada una, ver numeroDesempate). Se usa para el Reordenamiento dinámico del
+// bracket (ver intentarAvanzarRonda): el mejor puntaje acumulado se enfrenta
+// siempre al peor entre los que siguen vivos, no al que le tocó por posición
+// fija del árbol.
+async function puntajesAcumuladosBatalla(
+    categoria: Categoria,
+    competidorIds: string[],
+): Promise<Map<string, PuntajeAcumulado>> {
+    const registros = await prisma.registration.findMany({
+        where: { id: { in: competidorIds } },
+        select: { id: true, createdAt: true, preseleccionEscenarioId: true, preseleccionNumeroDesempate: true },
+    });
+
+    const acumulado = new Map<string, PuntajeAcumulado>();
+    for (const r of registros) {
+        let total = 0;
+        let originalidad = 0;
+        if (r.preseleccionEscenarioId) {
+            const { desglose } = await puntajePreseleccion(r.id, r.preseleccionNumeroDesempate);
+            if (desglose) {
+                total += desglose.tecnica + desglose.ejecucion + desglose.vocabulario + desglose.musicalidad + desglose.originalidad;
+                originalidad += desglose.originalidad;
+            }
+        }
+        acumulado.set(r.id, { total, originalidad, presentadoEn: r.createdAt });
+    }
+
+    const enfrentamientosJugados = await prisma.enfrentamiento.findMany({
+        where: {
+            categoria,
+            estatus: "FINALIZADO",
+            OR: [{ competidorAId: { in: competidorIds } }, { competidorBId: { in: competidorIds } }],
+        },
+        select: { id: true, numeroDesempate: true, competidorAId: true, competidorBId: true },
+    });
+    const idsEnfrentamientos = enfrentamientosJugados.map((e) => e.id);
+    const sumas = await prisma.calificacionJuez.groupBy({
+        by: ["enfrentamientoId", "numeroDesempate"],
+        where: { enfrentamientoId: { in: idsEnfrentamientos } },
+        _sum: {
+            tecnicaA: true,
+            ejecucionA: true,
+            vocabularioA: true,
+            musicalidadA: true,
+            originalidadA: true,
+            tecnicaB: true,
+            ejecucionB: true,
+            vocabularioB: true,
+            musicalidadB: true,
+            originalidadB: true,
+        },
+    });
+    const sumaPorLlave = new Map(sumas.map((s) => [`${s.enfrentamientoId}:${s.numeroDesempate}`, s._sum]));
+
+    for (const e of enfrentamientosJugados) {
+        const s = sumaPorLlave.get(`${e.id}:${e.numeroDesempate}`);
+        if (!s) continue;
+        if (e.competidorAId && acumulado.has(e.competidorAId)) {
+            const prev = acumulado.get(e.competidorAId)!;
+            prev.total += (s.tecnicaA ?? 0) + (s.ejecucionA ?? 0) + (s.vocabularioA ?? 0) + (s.musicalidadA ?? 0) + (s.originalidadA ?? 0);
+            prev.originalidad += s.originalidadA ?? 0;
+        }
+        if (e.competidorBId && acumulado.has(e.competidorBId)) {
+            const prev = acumulado.get(e.competidorBId)!;
+            prev.total += (s.tecnicaB ?? 0) + (s.ejecucionB ?? 0) + (s.vocabularioB ?? 0) + (s.musicalidadB ?? 0) + (s.originalidadB ?? 0);
+            prev.originalidad += s.originalidadB ?? 0;
+        }
+    }
+
+    return acumulado;
 }
 
 // Si todos los enfrentamientos de (categoria, rondaNumero) ya tienen ganador,
 // arma la siguiente ronda con los ganadores, o marca la categoría FINALIZADA
 // si ya solo queda un campeón. No hace nada si la ronda sigue incompleta.
 async function intentarAvanzarRonda(categoria: Categoria, rondaNumero: number): Promise<void> {
-    // orderBy es clave: el emparejamiento de la siguiente ronda es por
-    // posición (orden 0 vs 1, 2 vs 3, ...), no por sorteo, para que las
-    // líneas conectoras del bracket en /pantalla conecten con el partido real.
     const enfrentamientos = await prisma.enfrentamiento.findMany({
         where: { categoria, rondaNumero },
         orderBy: { orden: "asc" },
@@ -170,12 +259,31 @@ async function intentarAvanzarRonda(categoria: Categoria, rondaNumero: number): 
     const yaExiste = await prisma.enfrentamiento.count({ where: { categoria, rondaNumero: siguienteNumero } });
     if (yaExiste > 0) return;
 
+    // Reordenamiento dinámico por puntaje acumulado: antes de armar la
+    // siguiente ronda se recalcula quién va mejor (Preselección + batallas
+    // ganadas hasta ahora) y se vuelve a sembrar con el mismo criterio de
+    // torneo que el corte de Preselección (mejor vs peor, ver
+    // emparejarConSiembra) — ya NO se conserva la posición fija del árbol de
+    // la ronda 1. Empate exacto en puntaje total: desempata Originalidad
+    // acumulada y, si también empatan ahí, el orden de presentación/registro
+    // (mismo respaldo que usa calcularRankingPreseleccion).
+    const puntajes = await puntajesAcumuladosBatalla(categoria, ganadores);
+    const ganadoresOrdenados = [...ganadores].sort((a, b) => {
+        const pa = puntajes.get(a)!;
+        const pb = puntajes.get(b)!;
+        return (
+            pb.total - pa.total ||
+            pb.originalidad - pa.originalidad ||
+            pa.presentadoEn.getTime() - pb.presentadoEn.getTime()
+        );
+    });
+
     const filas = filasParaRonda(
         categoria,
         siguienteNumero,
         nombreRonda(siguienteNumero, totalRondas),
-        ganadores,
-        emparejarPorPosicion,
+        ganadoresOrdenados,
+        emparejarConSiembra,
     );
     await prisma.enfrentamiento.createMany({ data: filas });
 }
@@ -220,7 +328,17 @@ async function intentarResolverEnfrentamiento(enfrentamientoId: string): Promise
         const nuevoNumero = enfrentamiento.numeroDesempate + 1;
         await prisma.enfrentamiento.update({
             where: { id: enfrentamientoId },
-            data: { numeroDesempate: nuevoNumero, turnoACortadoEn: null, turnoBCortadoEn: null },
+            data: {
+                numeroDesempate: nuevoNumero,
+                turnoACortadoEn: null,
+                turnoBCortadoEn: null,
+                bailesFinalizadosEn: null,
+                // Reinicia la referencia de tiempo para este nuevo intento —
+                // calcularLimites en el frontend arranca de nuevo desde acá
+                // (anuncio VS, presentaciones, vueltas), no desde la pelea
+                // original que ya empató.
+                iniciadoEn: new Date(),
+            },
         });
         return { completo: true, empatado: true, numeroDesempate: nuevoNumero };
     }
@@ -395,10 +513,8 @@ competenciaRouter.patch(
 
         // Cualquier destino desde esta PATCH deja de ser PRESELECCION o
         // REPECHAJE_DESEMPATE (ninguno de los dos es un destino válido acá),
-        // así que se limpia toda la cola por escenario y se cancelan los
-        // avances automáticos pendientes de esta categoría, para no dejar un
+        // así que se limpia toda la cola por escenario, para no dejar un
         // competidor "fantasma" marcado en ningún escenario.
-        cancelarTodosLosAvancesAutomaticos(categoria);
         await prisma.turnoPreseleccionEscenario.deleteMany({ where: { categoria } });
 
         const estado = await prisma.estadoCategoria.upsert({
@@ -490,7 +606,7 @@ competenciaRouter.post(
                 prisma.turnoPreseleccionEscenario.upsert({
                     where: { categoria_escenarioId: { categoria, escenarioId: esc.id } },
                     create: { categoria, escenarioId: esc.id },
-                    update: { turnoActualId: null, turnoIniciadoEn: null, turnoCompletadoEn: null },
+                    update: { turnoActualId: null, turnoIniciadoEn: null, turnoCortadoEn: null },
                 }),
             ),
             prisma.estadoCategoria.upsert({
@@ -499,6 +615,13 @@ competenciaRouter.post(
                 update: { estatus: "PRESELECCION" },
             }),
         ]);
+
+        // Sube automáticamente al primer competidor de cada escenario a
+        // tarima — el staff ya no tiene que apretar "Siguiente" a mano para
+        // arrancar cada cola (ver avanzarTurnoPreseleccion).
+        for (const esc of escenariosActivos) {
+            await avanzarTurnoPreseleccion(categoria, esc.id);
+        }
 
         const reparto = escenariosActivos.map((esc, i) => ({
             escenarioId: esc.id,
@@ -665,6 +788,23 @@ competenciaRouter.post("/preseleccion/:registrationId/calificar", requireRole("J
         return res.status(400).json({ error: "Esta categoría no está en fase de preselección" });
     }
 
+    const escenarioId = registro.preseleccionEscenarioId;
+
+    // Sin cronómetro en Preselección: solo se puede calificar a quien el
+    // staff tiene AHORA MISMO en tarima en este escenario, y solo después de
+    // que corte su rutina con el botón "Cortar rutina" (ver POST
+    // .../preseleccion/cortar-turno) — así se evita que un juez califique
+    // antes de que termine la presentación, sin depender de ningún timer.
+    const turnoEscenario = await prisma.turnoPreseleccionEscenario.findUnique({
+        where: { categoria_escenarioId: { categoria: registro.categoria, escenarioId: escenarioId! } },
+    });
+    if (!turnoEscenario || turnoEscenario.turnoActualId !== registrationId) {
+        return res.status(400).json({ error: "Este competidor no está en tarima en este momento" });
+    }
+    if (!turnoEscenario.turnoCortadoEn) {
+        return res.status(400).json({ error: "El staff todavía no cierra la rutina de este competidor" });
+    }
+
     const parsed = puntuacionPreseleccionSchema.safeParse(req.body);
     if (!parsed.success) {
         return res.status(400).json({ errors: parsed.error.flatten() });
@@ -686,49 +826,32 @@ competenciaRouter.post("/preseleccion/:registrationId/calificar", requireRole("J
         return res.status(500).json({ error: "No se pudo guardar la calificación" });
     }
 
-    const escenarioId = registro.preseleccionEscenarioId;
-
-    // Si esta calificación fue la última que faltaba (todos los jueces
-    // activos DE ESTE ESCENARIO ya puntuaron) Y es justo quien está en
-    // tarima ahora mismo, agenda el avance automático al siguiente:
-    // /pantalla?escenario= se queda DURACION_RESULTADOS_PRESELECCION_MS
-    // mostrando nombre+puntaje+desglose antes de pasar solo (ver
-    // avanzarTurnoPreseleccion). El `esperado` evita saltarse a alguien si
-    // el staff ya avanzó a mano mientras tanto.
-    //
-    // turnoCompletadoEn se guarda en la base (no solo en el setTimeout en
-    // memoria) para que turnoActualDeEscenario pueda autocurarse si el
-    // proceso se reinicia en esa ventana de espera (ej. hot-reload de
-    // ts-node-dev en desarrollo) y el timer se pierde — sin esto la cola de
-    // ese escenario se queda pegada en un turno ya calificado para siempre.
-    const turnoEscenario = await prisma.turnoPreseleccionEscenario.findUnique({
-        where: { categoria_escenarioId: { categoria: registro.categoria, escenarioId } },
-    });
-    if (turnoEscenario?.turnoActualId === registrationId) {
-        const [juecesActivos, { calificacionesRecibidas }] = await Promise.all([
-            juecesActivosEnEscenario(escenarioId),
-            puntajePreseleccion(registrationId, numeroDesempate),
-        ]);
-        if (juecesActivos > 0 && calificacionesRecibidas >= juecesActivos) {
-            await prisma.turnoPreseleccionEscenario.update({
-                where: { categoria_escenarioId: { categoria: registro.categoria, escenarioId } },
-                data: { turnoCompletadoEn: new Date() },
-            });
-            cancelarAvanceAutomatico(registro.categoria, escenarioId);
-            const timer = setTimeout(() => {
-                avanzarTurnoPreseleccion(registro.categoria, escenarioId, registrationId).catch((error) => console.error(error));
-            }, DURACION_RESULTADOS_PRESELECCION_MS);
-            timersAvanceAutomatico.set(claveTimer(registro.categoria, escenarioId), timer);
-        }
-    }
+    const [juecesActivos, { calificacionesRecibidas }] = await Promise.all([
+        juecesActivosEnEscenario(escenarioId!),
+        puntajePreseleccion(registrationId, numeroDesempate),
+    ]);
+    const turnoCompleto = juecesActivos > 0 && calificacionesRecibidas >= juecesActivos;
 
     // Si la categoría está resolviendo un empate en la frontera de corte,
     // revisa si con esta calificación ya se completó la ronda vigente de
-    // TODOS los empatados — de ser así, recorta de nuevo (puede resolverse,
-    // o lanzar otra ronda extra si vuelve a empatar). Ver
-    // resolverCorteOLanzarRepechaje / intentarResolverRepechaje.
+    // TODOS los empatados — de ser así, recorta de nuevo (puede resolverse y
+    // borrar la cola de este escenario, o lanzar otra ronda extra y
+    // reiniciarla). Se hace ANTES de avanzar el turno para que, si se lanza
+    // una ronda nueva, el avance de abajo suba directo al primero de esa
+    // ronda nueva.
     if (estado.estatus === "REPECHAJE_DESEMPATE") {
         await intentarResolverRepechaje(registro.categoria);
+    }
+
+    // Avance automático: en cuanto todos los jueces activos de este
+    // escenario califican, sube solo al siguiente competidor — no hace
+    // falta ningún botón ni revelar puntaje alguno (ver Lado azul y lado
+    // rojo / Privacidad de calificaciones en filtros). Si la categoría ya
+    // salió de Preselección/Repechaje (ej. esta calificación resolvió el
+    // repechaje y ya se generó el bracket), avanzarTurnoPreseleccion
+    // simplemente no hace nada — se ignora el error.
+    if (turnoCompleto) {
+        await avanzarTurnoPreseleccion(registro.categoria, escenarioId!).catch((error) => console.error(error));
     }
 
     return res.status(201).json({ ok: true });
@@ -779,11 +902,14 @@ interface TurnoPreseleccionActual {
     categoria: Categoria;
     escenarioId: string;
     iniciadoEn: Date;
+    // true una vez que el staff cortó su rutina (ver POST
+    // .../preseleccion/cortar-turno) — antes de eso ningún juez puede
+    // calificarlo, y en pantalla solo se ve nombre+foto sin ningún
+    // cronómetro (ver SecuenciaPreseleccion en el frontend).
+    cortado: boolean;
     calificacionesRecibidas: number;
     juecesActivos: number;
     completo: boolean;
-    puntajeTotal: number | null;
-    desglose: DesglosePuntaje | null;
 }
 
 const TURNO_ACTUAL_SELECT = { ...COMPETIDOR_SELECT.select, preseleccionNumeroDesempate: true };
@@ -795,7 +921,7 @@ const TURNO_ACTUAL_SELECT = { ...COMPETIDOR_SELECT.select, preseleccionNumeroDes
 // quién debe calificar un juez de ese escenario). Lo usan el GET público y
 // las rutas de abajo.
 async function turnoActualDeEscenario(categoria: Categoria, escenarioId: string): Promise<TurnoPreseleccionActual | null> {
-    let turno = await prisma.turnoPreseleccionEscenario.findUnique({
+    const turno = await prisma.turnoPreseleccionEscenario.findUnique({
         where: { categoria_escenarioId: { categoria, escenarioId } },
         include: { turnoActual: { select: TURNO_ACTUAL_SELECT } },
     });
@@ -803,33 +929,8 @@ async function turnoActualDeEscenario(categoria: Categoria, escenarioId: string)
         return null;
     }
 
-    // Autocuración: si este turno ya se completó hace rato pero nadie
-    // avanzó a tiempo (el setTimeout en memoria se perdió, ej. el proceso se
-    // reinició en esa ventana), cualquier consulta de turno-actual lo
-    // detecta acá y avanza sola — /pantalla, admin/jueceo y el panel de
-    // competencia hacen poll cada 3-4s, así que se autocorrige solo en unos
-    // segundos sin que el staff tenga que intervenir a mano.
-    if (
-        turno.turnoCompletadoEn &&
-        Date.now() - turno.turnoCompletadoEn.getTime() >= DURACION_RESULTADOS_PRESELECCION_MS
-    ) {
-        const avance = await avanzarTurnoPreseleccion(categoria, escenarioId, turno.turnoActualId ?? undefined);
-        if (!("error" in avance)) {
-            return avance.turno;
-        }
-        // Alguien más ya avanzó mientras tanto (ej. otro poll ganó la
-        // carrera, o el staff avanzó a mano) — se relee el estado actual.
-        turno = await prisma.turnoPreseleccionEscenario.findUnique({
-            where: { categoria_escenarioId: { categoria, escenarioId } },
-            include: { turnoActual: { select: TURNO_ACTUAL_SELECT } },
-        });
-        if (!turno?.turnoActual || !turno.turnoIniciadoEn) {
-            return null;
-        }
-    }
-
     const { preseleccionNumeroDesempate, ...participante } = turno.turnoActual;
-    const [juecesActivos, { calificacionesRecibidas, puntajeTotal, desglose }] = await Promise.all([
+    const [juecesActivos, { calificacionesRecibidas }] = await Promise.all([
         juecesActivosEnEscenario(escenarioId),
         puntajePreseleccion(participante.id, preseleccionNumeroDesempate),
     ]);
@@ -839,11 +940,10 @@ async function turnoActualDeEscenario(categoria: Categoria, escenarioId: string)
         categoria,
         escenarioId,
         iniciadoEn: turno.turnoIniciadoEn,
+        cortado: !!turno.turnoCortadoEn,
         calificacionesRecibidas,
         juecesActivos,
         completo: juecesActivos > 0 && calificacionesRecibidas >= juecesActivos,
-        puntajeTotal,
-        desglose,
     };
 }
 
@@ -918,19 +1018,30 @@ competenciaRouter.get("/categorias/:categoria/preseleccion/proximos", async (req
     return res.json({ proximos });
 });
 
-// Público: ranking completo (todos los pagados, aunque no hayan sido
-// calificados todavía) de la fase de Preselección. Lo consume /pantalla para
-// el recorrido de resultados uno por uno, mejor puntaje primero, una vez que
-// se acabó la fila de turnos (ver useRecapPreseleccion en
-// frontend/src/app/pantalla/SecuenciaPreseleccion.tsx). Mismo cálculo de
-// puntaje que generar-top-bracket, pero sin cortar ni exigir que esté
-// completo — acá "completo" es solo un dato más por fila.
-competenciaRouter.get("/categorias/:categoria/preseleccion/resultados", async (req, res) => {
-    const categoria = req.params.categoria as Categoria;
-    if (!TODAS_LAS_CATEGORIAS.includes(categoria)) {
-        return res.status(404).json({ error: "Categoría desconocida" });
-    }
+export interface ResultadoPreseleccionDetallado {
+    id: string;
+    nombreArtistico: string;
+    nombres: string;
+    apellidos: string;
+    competidorId: string | null;
+    fotoUrl: string | null;
+    escenarioId: string | null;
+    escenarioNombre: string | null;
+    numeroDesempate: number;
+    calificacionesRecibidas: number;
+    juecesActivos: number;
+    puntajeTotal: number | null;
+    completo: boolean;
+}
 
+// Calcula el ranking completo (todos los pagados, aunque no hayan sido
+// calificados todavía) de la fase de Preselección — con puntaje real,
+// siempre. Usado por el panel de staff (datos completos en todo momento) y,
+// filtrado, por el endpoint público de abajo (ver
+// PRIVACIDAD_PUNTAJES_PRESELECCION). Mismo cálculo de puntaje que
+// generar-top-bracket, pero sin cortar ni exigir que esté completo — acá
+// "completo" es solo un dato más por fila.
+async function calcularResultadosPreseleccionDetallados(categoria: Categoria): Promise<ResultadoPreseleccionDetallado[]> {
     const participantes = await prisma.registration.findMany({
         where: { categoria, estatusPago: "PAGADO", esPrueba: await modoPruebaActivo() },
         select: {
@@ -994,57 +1105,63 @@ competenciaRouter.get("/categorias/:categoria/preseleccion/resultados", async (r
         })
         .sort((a, b) => (b.puntajeTotal ?? -1) - (a.puntajeTotal ?? -1));
 
-    return res.json({ resultados });
+    return resultados;
+}
+
+// Cuánto se expone en el endpoint PÚBLICO de resultados de Preselección
+// mientras todavía falta alguien por calificar: nada de puntajes — ni al
+// público ni a los competidores (ver Privacidad de calificaciones en
+// filtros). En cuanto TODOS los pagados de la categoría ya quedaron
+// calificados (mismo instante en que se habilita el recorrido de resultados
+// en /pantalla, ver useRecapPreseleccion), se revela el puntaje real de
+// todos a la vez — ya no hay nada que proteger, la fase de captura terminó.
+function ocultarPuntajesSiFalta(resultados: ResultadoPreseleccionDetallado[]): ResultadoPreseleccionDetallado[] {
+    const todosCompletos = resultados.length > 0 && resultados.every((r) => r.completo);
+    if (todosCompletos) return resultados;
+    return resultados.map((r) => ({ ...r, puntajeTotal: null }));
+}
+
+// Público: la pantalla del evento lee esto sin autenticarse. Ver
+// ocultarPuntajesSiFalta — mientras la Preselección sigue en curso, viaja sin
+// puntajes.
+competenciaRouter.get("/categorias/:categoria/preseleccion/resultados", async (req, res) => {
+    const categoria = req.params.categoria as Categoria;
+    if (!TODAS_LAS_CATEGORIAS.includes(categoria)) {
+        return res.status(404).json({ error: "Categoría desconocida" });
+    }
+
+    const resultados = await calcularResultadosPreseleccionDetallados(categoria);
+    return res.json({ resultados: ocultarPuntajesSiFalta(resultados) });
 });
 
-// Cuánto se queda /pantalla mostrando nombre+categoría+puntaje+desglose de un
-// participante antes de pasar solo al siguiente (ver avanzarTurnoPreseleccion
-// y el timer que agenda POST /preseleccion/:registrationId/calificar).
-const DURACION_RESULTADOS_PRESELECCION_MS = 7_000;
-
-// Un timer pendiente de avance automático por categoría+escenario (se agenda
-// cuando terminan de calificar al turno actual de ESE escenario; el staff
-// puede adelantarse con el botón manual, por eso hay que poder cancelarlo).
-// Vive en memoria del proceso: si el servidor se reinicia a mitad de una
-// espera, ese avance en particular se pierde, pero el staff siempre puede
-// apretar "Siguiente" a mano — no es una falla catastrófica, solo hay que
-// saberlo.
-const timersAvanceAutomatico = new Map<string, ReturnType<typeof setTimeout>>();
-
-function claveTimer(categoria: Categoria, escenarioId: string): string {
-    return `${categoria}:${escenarioId}`;
-}
-
-function cancelarAvanceAutomatico(categoria: Categoria, escenarioId: string) {
-    const key = claveTimer(categoria, escenarioId);
-    const timer = timersAvanceAutomatico.get(key);
-    if (timer) {
-        clearTimeout(timer);
-        timersAvanceAutomatico.delete(key);
-    }
-}
-
-// Cancela todos los timers pendientes de TODOS los escenarios de una
-// categoría — se usa cuando la categoría sale de PRESELECCION/REPECHAJE_DESEMPATE
-// por completo (PATCH manual de estatus, o al resolverse el Top Bracket).
-function cancelarTodosLosAvancesAutomaticos(categoria: Categoria) {
-    const prefijo = `${categoria}:`;
-    for (const key of [...timersAvanceAutomatico.keys()]) {
-        if (key.startsWith(prefijo)) {
-            clearTimeout(timersAvanceAutomatico.get(key)!);
-            timersAvanceAutomatico.delete(key);
+// Solo staff: mismo ranking que el endpoint público de arriba, pero SIEMPRE
+// con los puntajes reales — lo necesita el panel de Admin > Competencia para
+// que el staff pueda seguir el avance de la calificación en vivo y decidir
+// cuándo ya está todo listo para generar el Top Bracket.
+competenciaRouter.get(
+    "/categorias/:categoria/preseleccion/resultados-staff",
+    requireRole("SUPER_ADMIN", "STAFF_JUECEO"),
+    async (req, res) => {
+        const categoria = req.params.categoria as Categoria;
+        if (!TODAS_LAS_CATEGORIAS.includes(categoria)) {
+            return res.status(404).json({ error: "Categoría desconocida" });
         }
-    }
-}
 
-// Núcleo compartido por el botón manual "Siguiente" (ver la ruta de abajo) y
-// por el avance automático que se agenda al terminar de calificar (ver
-// /preseleccion/:registrationId/calificar): avanza el turnoActualId de UN
-// escenario al siguiente de su cola fija (orden de registro, createdAt —
-// mismo orden que usa POST .../preseleccion/iniciar para repartir los
-// lotes). Si el turno actual ya no está en la lista de pagados de ese
-// escenario (ej. se le canceló el pago), se trata como si no hubiera turno y
-// arranca desde el principio de la fila.
+        const resultados = await calcularResultadosPreseleccionDetallados(categoria);
+        return res.json({ resultados });
+    },
+);
+
+// Avanza el turnoActualId de UN escenario al siguiente de su cola fija
+// (orden de registro, createdAt — mismo orden que usa POST
+// .../preseleccion/iniciar para repartir los lotes). Se llama sola, sin
+// ningún botón: al iniciar la Preselección (sube al primero de cada
+// escenario), al completarse la calificación de todos los jueces activos de
+// un turno (ver POST /preseleccion/:registrationId/calificar), y al lanzar
+// una nueva ronda de repechaje (ver resolverCorteOLanzarRepechaje). Si el
+// turno actual ya no está en la lista de pagados de ese escenario (ej. se le
+// canceló el pago), se trata como si no hubiera turno y arranca desde el
+// principio de la fila.
 //
 // El filtro "calificación completa en la ronda VIGENTE de cada quien"
 // (preseleccionNumeroDesempate) sirve para preselección normal Y para
@@ -1053,14 +1170,9 @@ function cancelarTodosLosAvancesAutomaticos(categoria: Categoria) {
 // repechaje, los no-empatados ya están completos en su ronda 0 (nunca vuelven
 // a aparecer) y solo los empatados —recién subidos a una ronda nueva sin
 // calificaciones todavía— entran como candidatos.
-//
-// `esperado`, si se pasa, es una guarda contra condición de carrera: si el
-// turno actual ya cambió a otra persona (ej. el staff avanzó a mano mientras
-// corría el timer automático), no hace nada — evita saltarse a alguien.
 async function avanzarTurnoPreseleccion(
     categoria: Categoria,
     escenarioId: string,
-    esperado?: string,
 ): Promise<{ turno: TurnoPreseleccionActual | null; terminado: boolean } | { error: string }> {
     const estadoCategoria = await prisma.estadoCategoria.findUnique({ where: { categoria } });
     if (estadoCategoria?.estatus !== "PRESELECCION" && estadoCategoria?.estatus !== "REPECHAJE_DESEMPATE") {
@@ -1072,9 +1184,6 @@ async function avanzarTurnoPreseleccion(
     });
     if (!turnoEscenario) {
         return { error: "Este escenario no participa en la preselección de esta categoría" };
-    }
-    if (esperado !== undefined && turnoEscenario.turnoActualId !== esperado) {
-        return { error: "IGNORADO_YA_AVANZO" };
     }
 
     const participantes = await prisma.registration.findMany({
@@ -1095,14 +1204,11 @@ async function avanzarTurnoPreseleccion(
     const conteoPorLlave = new Map(puntuaciones.map((p) => [`${p.registrationId}:${p.numeroDesempate}`, p._count.id]));
     const calificacionesVigentes = (id: string, numeroDesempate: number) => conteoPorLlave.get(`${id}:${numeroDesempate}`) ?? 0;
 
-    // "Siguiente" nunca debe abandonar a quien está en tarima si todavía no
-    // lo calificaron todos los jueces activos de este escenario — ni el
-    // botón manual ni el avance automático (que solo llega hasta acá cuando
-    // `esperado` sí coincide, y por diseño el turno esperado ya debería
-    // estar completo en ese caso). Sin esta guarda, un click manual que
-    // llega justo después de que el avance automático ya corrió por su
-    // cuenta puede saltarse a la siguiente persona sin darle oportunidad de
-    // ser calificada.
+    // Nunca debe abandonar a quien está en tarima si todavía no lo
+    // calificaron todos los jueces activos de este escenario — esta función
+    // solo se llama automáticamente cuando el turno vigente ya se completó
+    // (ver POST /preseleccion/:registrationId/calificar), pero esta guarda
+    // se deja igual como respaldo defensivo.
     if (turnoEscenario.turnoActualId) {
         const actual = participantes.find((p) => p.id === turnoEscenario.turnoActualId);
         if (actual && calificacionesVigentes(actual.id, actual.preseleccionNumeroDesempate) < juecesActivos) {
@@ -1116,11 +1222,9 @@ async function avanzarTurnoPreseleccion(
 
     // Busca el siguiente SIN calificación completa (en su ronda vigente) a
     // partir de la posición actual — no solo "el que sigue en la lista" —
-    // para que "Siguiente" nunca reaparezca a alguien que ya calificaron
-    // todos los jueces. Esto también evita que, una vez que la fila ya se
-    // acabó (turnoActualId en null, idxActual = -1), un click de más en
-    // "Siguiente" reinicie la fila desde el principio: si ya no queda nadie
-    // sin calificar, simplemente no encuentra a nadie y se queda terminado.
+    // para que nunca reaparezca a alguien que ya calificaron todos los
+    // jueces. Si ya no queda nadie sin calificar, simplemente no encuentra a
+    // nadie y la fila se queda terminada (turnoActualId en null).
     const siguiente = participantes
         .slice(idxActual + 1)
         .find((p) => calificacionesVigentes(p.id, p.preseleccionNumeroDesempate) < juecesActivos);
@@ -1128,29 +1232,26 @@ async function avanzarTurnoPreseleccion(
     if (!siguiente) {
         await prisma.turnoPreseleccionEscenario.update({
             where: { categoria_escenarioId: { categoria, escenarioId } },
-            data: { turnoActualId: null, turnoIniciadoEn: null, turnoCompletadoEn: null },
+            data: { turnoActualId: null, turnoIniciadoEn: null, turnoCortadoEn: null },
         });
         return { turno: null, terminado: true };
     }
 
     await prisma.turnoPreseleccionEscenario.update({
         where: { categoria_escenarioId: { categoria, escenarioId } },
-        data: { turnoActualId: siguiente.id, turnoIniciadoEn: new Date(), turnoCompletadoEn: null },
+        data: { turnoActualId: siguiente.id, turnoIniciadoEn: new Date(), turnoCortadoEn: null },
     });
 
     return { turno: await turnoActualDeEscenario(categoria, escenarioId), terminado: false };
 }
 
-// Solo staff: avanza a mano al siguiente participante de la cola fija de UN
-// escenario — arranca la fila (nadie sube a tarima solo) y también sirve
-// para saltarse a mano la espera de DURACION_RESULTADOS_PRESELECCION_MS una
-// vez que el turno actual ya quedó completo. No puede abandonar a alguien
-// que todavía no terminó de calificarse (ver la guarda en
-// avanzarTurnoPreseleccion) — no es una forma de saltarse a un competidor
-// sin calificar. Mismo endpoint sirve durante REPECHAJE_DESEMPATE para
-// arrancar la cola de los empatados de ese escenario.
+// Solo staff: cierra la rutina del competidor que está en tarima ahora mismo
+// en UN escenario — a partir de este clic los jueces de ese escenario pueden
+// calificarlo (ver el gate en POST /preseleccion/:registrationId/calificar).
+// No hay cronómetro en Preselección: el staff decide a ojo cuándo terminó la
+// presentación, en vez de esperar una duración fija.
 competenciaRouter.post(
-    "/categorias/:categoria/preseleccion/siguiente-turno",
+    "/categorias/:categoria/preseleccion/cortar-turno",
     requireRole("SUPER_ADMIN", "STAFF_JUECEO"),
     async (req, res) => {
         const categoria = req.params.categoria as Categoria;
@@ -1162,12 +1263,22 @@ competenciaRouter.post(
             return res.status(400).json({ error: "Falta escenarioId" });
         }
 
-        cancelarAvanceAutomatico(categoria, escenarioId);
-        const resultado = await avanzarTurnoPreseleccion(categoria, escenarioId);
-        if ("error" in resultado) {
-            return res.status(400).json({ error: resultado.error });
+        const turnoEscenario = await prisma.turnoPreseleccionEscenario.findUnique({
+            where: { categoria_escenarioId: { categoria, escenarioId } },
+        });
+        if (!turnoEscenario || !turnoEscenario.turnoActualId) {
+            return res.status(400).json({ error: "No hay nadie en tarima en este escenario" });
         }
-        return res.status(201).json(resultado);
+        if (turnoEscenario.turnoCortadoEn) {
+            return res.status(409).json({ error: "Ya se cortó la rutina de este competidor" });
+        }
+
+        await prisma.turnoPreseleccionEscenario.update({
+            where: { categoria_escenarioId: { categoria, escenarioId } },
+            data: { turnoCortadoEn: new Date() },
+        });
+
+        return res.status(201).json({ turno: await turnoActualDeEscenario(categoria, escenarioId) });
     },
 );
 
@@ -1248,6 +1359,13 @@ interface RankingPreseleccion {
     puntajeTotal: number;
     originalidadTotal: number;
     escenarioId: string | null;
+    // Orden de registro = orden en que se presentaron en tarima (misma cola
+    // fija que usa avanzarTurnoPreseleccion). Desempata cuando dos
+    // competidores quedan exactamente iguales en puntaje total Y en
+    // Originalidad, fuera de la frontera del corte (ahí sí se lanza
+    // REPECHAJE_DESEMPATE, ver calcularCorte) — sin esto el orden entre
+    // ellos sería arbitrario (orden de la consulta a la base).
+    presentadoEn: Date;
 }
 
 interface FaltantePreseleccion {
@@ -1276,6 +1394,7 @@ async function calcularRankingPreseleccion(
             apellidos: true,
             preseleccionEscenarioId: true,
             preseleccionNumeroDesempate: true,
+            createdAt: true,
         },
     });
     if (competidores.length < CORTES_PRESELECCION[0]!) {
@@ -1313,9 +1432,21 @@ async function calcularRankingPreseleccion(
         }
         const puntajeTotal =
             (s!._sum.tecnica ?? 0) + (s!._sum.ejecucion ?? 0) + (s!._sum.vocabulario ?? 0) + (s!._sum.musicalidad ?? 0) + (s!._sum.originalidad ?? 0);
-        ranking.push({ id: c.id, nombre, puntajeTotal, originalidadTotal: s!._sum.originalidad ?? 0, escenarioId: c.preseleccionEscenarioId });
+        ranking.push({
+            id: c.id,
+            nombre,
+            puntajeTotal,
+            originalidadTotal: s!._sum.originalidad ?? 0,
+            escenarioId: c.preseleccionEscenarioId,
+            presentadoEn: c.createdAt,
+        });
     }
-    ranking.sort((a, b) => b.puntajeTotal - a.puntajeTotal || b.originalidadTotal - a.originalidadTotal);
+    ranking.sort(
+        (a, b) =>
+            b.puntajeTotal - a.puntajeTotal ||
+            b.originalidadTotal - a.originalidadTotal ||
+            a.presentadoEn.getTime() - b.presentadoEn.getTime(),
+    );
 
     return { ranking, faltantes };
 }
@@ -1397,7 +1528,7 @@ async function resolverCorteOLanzarRepechaje(categoria: Categoria): Promise<Resu
             ...[...escenariosInvolucrados].map((escenarioId) =>
                 prisma.turnoPreseleccionEscenario.update({
                     where: { categoria_escenarioId: { categoria, escenarioId } },
-                    data: { turnoActualId: null, turnoIniciadoEn: null, turnoCompletadoEn: null },
+                    data: { turnoActualId: null, turnoIniciadoEn: null, turnoCortadoEn: null },
                 }),
             ),
             prisma.estadoCategoria.upsert({
@@ -1407,13 +1538,19 @@ async function resolverCorteOLanzarRepechaje(categoria: Categoria): Promise<Resu
             }),
         ]);
 
+        // Sube automáticamente al primer empatado de cada escenario
+        // involucrado — mismo criterio que al iniciar la Preselección, el
+        // staff no tiene que subirlos a mano.
+        for (const escenarioId of escenariosInvolucrados) {
+            await avanzarTurnoPreseleccion(categoria, escenarioId);
+        }
+
         return { tipo: "repechaje", empatados: corte.empatados };
     }
 
     const totalRondas = totalRondasParaParticipantes(corte.topN);
     const filas = filasParaRonda(categoria, 1, nombreRonda(1, totalRondas), corte.idsCorte, emparejarConSiembra);
 
-    cancelarTodosLosAvancesAutomaticos(categoria);
     // Misma razón que en /generar-bracket: una sola transacción evita que
     // una interrupción a mitad de camino deje los enfrentamientos creados
     // con la categoría atascada en PRESELECCION/REPECHAJE_DESEMPATE.
@@ -1513,7 +1650,11 @@ competenciaRouter.post(
     },
 );
 
-// Público: la pantalla del evento lee esto sin autenticarse.
+// Público: la pantalla del evento y /resultados leen esto sin autenticarse.
+// Manda el puntaje TOTAL de cada lado (ej. 40 vs 45) pero NUNCA el desglose
+// por rubro — ver Consulta individual de desglose: ese detalle es exclusivo
+// de cada competidor desde /mi-desglose, no debe poder bajarse de ningún
+// endpoint público, ni siquiera uno que la pantalla ya no renderiza.
 competenciaRouter.get("/enfrentamientos", async (req, res) => {
     const rawCategoria = req.query.categoria;
     if (rawCategoria !== undefined && typeof rawCategoria !== "string") {
@@ -1530,7 +1671,9 @@ competenciaRouter.get("/enfrentamientos", async (req, res) => {
         orderBy: [{ categoria: "asc" }, { orden: "asc" }],
     });
 
-    return res.json({ enfrentamientos: await conPuntajes(enfrentamientos) });
+    const conPuntaje = await conPuntajes(enfrentamientos);
+    const sinDesglose = conPuntaje.map(({ desgloseA, desgloseB, ...resto }) => resto);
+    return res.json({ enfrentamientos: sinDesglose });
 });
 
 // Solo staff/jueces: las batallas activas ahora mismo (estatus EN_CURSO), con
@@ -1686,6 +1829,40 @@ competenciaRouter.post("/enfrentamientos/:id/cortar-turno", requireRole("SUPER_A
     return res.json({ enfrentamiento: actualizado });
 });
 
+// Solo SUPER_ADMIN: marca que YA terminaron de bailar las dos partes en
+// TODAS las vueltas de este intento (una Final llega a tener hasta 3) y
+// habilita de inmediato el envío de calificación de los jueces, sin esperar
+// el tiempo nominal completo — arregla el error donde cortar un turno no
+// acortaba la espera real de los jueces (ver iniciadoEn en schema.prisma).
+// Si nunca se usa este botón, el sistema sigue funcionando igual que antes:
+// los jueces pueden enviar en cuanto se agota el tiempo nominal de la última
+// vuelta.
+competenciaRouter.post("/enfrentamientos/:id/finalizar-baile", requireRole("SUPER_ADMIN"), async (req, res) => {
+    const { id } = req.params;
+    if (typeof id !== "string") {
+        return res.status(400).json({ error: "Falta id" });
+    }
+
+    const enfrentamiento = await prisma.enfrentamiento.findUnique({ where: { id } });
+    if (!enfrentamiento) {
+        return res.status(404).json({ error: "Enfrentamiento no encontrado" });
+    }
+    if (enfrentamiento.estatus !== "EN_CURSO") {
+        return res.status(400).json({ error: "Esta batalla no está en curso" });
+    }
+    if (enfrentamiento.bailesFinalizadosEn) {
+        return res.status(409).json({ error: "Ya se marcaron las rondas de baile como finalizadas" });
+    }
+
+    const actualizado = await prisma.enfrentamiento.update({
+        where: { id },
+        data: { bailesFinalizadosEn: new Date() },
+        include: { competidorA: COMPETIDOR_SELECT, competidorB: COMPETIDOR_SELECT, ganador: COMPETIDOR_SELECT },
+    });
+
+    return res.json({ enfrentamiento: actualizado });
+});
+
 competenciaRouter.patch("/enfrentamientos/:id", requireRole("SUPER_ADMIN", "STAFF_JUECEO"), async (req, res) => {
     const { id } = req.params;
     if (typeof id !== "string") {
@@ -1698,9 +1875,13 @@ competenciaRouter.patch("/enfrentamientos/:id", requireRole("SUPER_ADMIN", "STAF
     }
 
     try {
+        // Referencia fija de tiempo para calcularLimites en el frontend — a
+        // diferencia de updatedAt, no se mueve al cortar un turno después.
+        const data = { ...sinIndefinidos(parsed.data), ...(parsed.data.estatus === "EN_CURSO" ? { iniciadoEn: new Date() } : {}) };
+
         const enfrentamiento = await prisma.enfrentamiento.update({
             where: { id },
-            data: sinIndefinidos(parsed.data),
+            data,
             include: { competidorA: COMPETIDOR_SELECT, competidorB: COMPETIDOR_SELECT, ganador: COMPETIDOR_SELECT },
         });
 
@@ -1716,4 +1897,122 @@ competenciaRouter.patch("/enfrentamientos/:id", requireRole("SUPER_ADMIN", "STAF
         console.error(error);
         return res.status(500).json({ error: "No se pudo actualizar el enfrentamiento" });
     }
+});
+
+const buscarMiDesgloseSchema = z.object({
+    nombre: z.string().trim().min(1),
+});
+
+// Público: busca por nombre de competidor (Bboy/Bgirl name) — ya es
+// información pública (aparece en el bracket, /resultados y la pantalla del
+// evento), así que esto NO es una puerta de privacidad, solo encuentra el id
+// interno para pedir el detalle (ver GET /mi-desglose de abajo). "Contiene"
+// en vez de exacto para tolerar mayúsculas/espacios al escribir desde el
+// celular; si hay coincidencias exactas se listan primero (puede haber más
+// de un competidor con el mismo nombre artístico, sobre todo entre
+// categorías distintas).
+competenciaRouter.get("/mi-desglose/buscar", miDesgloseLimiter, async (req, res) => {
+    const parsed = buscarMiDesgloseSchema.safeParse(req.query);
+    if (!parsed.success) {
+        return res.status(400).json({ error: "Falta el nombre de competidor" });
+    }
+    const { nombre } = parsed.data;
+
+    const registros = await prisma.registration.findMany({
+        where: {
+            estatusPago: "PAGADO",
+            esPrueba: await modoPruebaActivo(),
+            nombreArtistico: { contains: nombre, mode: "insensitive" },
+        },
+        select: { id: true, nombreArtistico: true, nombres: true, apellidos: true, categoria: true, competidorId: true },
+        orderBy: { nombreArtistico: "asc" },
+        take: 10,
+    });
+
+    const nombreLower = nombre.toLowerCase();
+    registros.sort((a, b) => {
+        const aExacto = a.nombreArtistico.toLowerCase() === nombreLower ? 0 : 1;
+        const bExacto = b.nombreArtistico.toLowerCase() === nombreLower ? 0 : 1;
+        return aExacto - bExacto;
+    });
+
+    return res.json({
+        resultados: registros.map((r) => ({
+            id: r.id,
+            nombre: r.nombreArtistico || `${r.nombres} ${r.apellidos}`,
+            categoria: r.categoria,
+            competidorId: r.competidorId,
+        })),
+    });
+});
+
+// Público: detalle de desglose de UN competidor por su id interno (ver
+// GET /mi-desglose/buscar de arriba). El puntaje/desglose por rubro ya no
+// se proyecta en la pantalla pública (ver Simplificación del resultado en
+// pantalla principal) — se consulta acá desde el propio teléfono.
+competenciaRouter.get("/mi-desglose", miDesgloseLimiter, async (req, res) => {
+    const idParam = req.query.id;
+    if (typeof idParam !== "string" || idParam.length === 0) {
+        return res.status(400).json({ error: "Falta el id del competidor" });
+    }
+
+    const registro = await prisma.registration.findFirst({
+        where: {
+            id: idParam,
+            estatusPago: "PAGADO",
+            esPrueba: await modoPruebaActivo(),
+        },
+    });
+    if (!registro) {
+        return res.status(404).json({ error: "No encontramos ese competidor" });
+    }
+
+    // Preselección (si esta categoría la usó): misma privacidad que el resto
+    // del sistema — el desglose solo se revela una vez que TODOS los
+    // competidores de la categoría ya quedaron calificados, no apenas este
+    // competidor en particular (ver ocultarPuntajesSiFalta).
+    let preseleccion: { puntajeTotal: number; desglose: DesglosePuntaje } | null = null;
+    if (registro.preseleccionEscenarioId) {
+        const resultadosCategoria = await calcularResultadosPreseleccionDetallados(registro.categoria);
+        const revelado = resultadosCategoria.length > 0 && resultadosCategoria.every((r) => r.completo);
+        if (revelado) {
+            const { puntajeTotal, desglose } = await puntajePreseleccion(registro.id, registro.preseleccionNumeroDesempate);
+            if (puntajeTotal != null && desglose) {
+                preseleccion = { puntajeTotal, desglose };
+            }
+        }
+    }
+
+    const enfrentamientos = await prisma.enfrentamiento.findMany({
+        where: {
+            estatus: "FINALIZADO",
+            OR: [{ competidorAId: registro.id }, { competidorBId: registro.id }],
+        },
+        include: { competidorA: COMPETIDOR_SELECT, competidorB: COMPETIDOR_SELECT },
+        orderBy: { rondaNumero: "asc" },
+    });
+    const conDesglose = await conPuntajes(enfrentamientos);
+
+    const batallas = conDesglose.map((e) => {
+        const soyA = e.competidorAId === registro.id;
+        const rival = soyA ? e.competidorB : e.competidorA;
+        return {
+            id: e.id,
+            ronda: e.ronda,
+            rivalNombre: rival ? rival.nombreArtistico || `${rival.nombres} ${rival.apellidos}` : null,
+            gane: e.ganadorId === registro.id,
+            miPuntaje: soyA ? e.puntajeA : e.puntajeB,
+            miDesglose: soyA ? e.desgloseA : e.desgloseB,
+        };
+    });
+
+    return res.json({
+        competidor: {
+            nombre: registro.nombreArtistico || `${registro.nombres} ${registro.apellidos}`,
+            competidorId: registro.competidorId,
+            categoria: registro.categoria,
+        },
+        preseleccion,
+        batallas,
+    });
 });

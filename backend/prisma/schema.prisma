@@ -208,11 +208,15 @@ model EstadoCategoria {
 // categoría+escenario activo en ella (reemplaza el turno único que existía
 // antes de la Preselección Paralela Multiescenario): qué participante está
 // en tarima ahora mismo EN ESE ESCENARIO, compartido entre /pantalla?escenario=
-// (overlay con cronómetro, ver frontend/src/app/pantalla/SecuenciaPreseleccion.tsx)
+// (nombre+foto, sin cronómetro, ver frontend/src/app/pantalla/SecuenciaPreseleccion.tsx)
 // y admin/jueceo (a quién debe calificar un juez de ese escenario). Se crea
 // al iniciar la Preselección de la categoría (ver
-// POST /categorias/:categoria/preseleccion/iniciar) y se resetea (turnoActualId
-// a null) para los competidores empatados al entrar a REPECHAJE_DESEMPATE.
+// POST /categorias/:categoria/preseleccion/iniciar, que también sube
+// automáticamente al primer competidor de cada escenario) y se resetea
+// (turnoActualId a null) para los competidores empatados al entrar a
+// REPECHAJE_DESEMPATE. El avance al siguiente competidor es siempre
+// automático (ver avanzarTurnoPreseleccion en backend/src/routes/competencia.ts)
+// — no hay ningún botón manual para esto.
 model TurnoPreseleccionEscenario {
   id          String    @id @default(uuid())
   categoria   Categoria
@@ -222,14 +226,13 @@ model TurnoPreseleccionEscenario {
   turnoActualId   String?
   turnoActual     Registration? @relation(fields: [turnoActualId], references: [id])
   turnoIniciadoEn DateTime?
-  // Momento en que el turno actual quedó completo (todos los jueces activos
-  // de ESTE escenario ya calificaron), para poder avanzar solo al siguiente
-  // sin depender de un setTimeout en memoria del proceso — si el servidor se
-  // reinicia justo en esa ventana de espera (ej. hot-reload en dev), el
-  // avance normal se pierde; con esto, cualquier siguiente consulta de
-  // turno-actual detecta que ya se cumplió el tiempo y avanza sola (ver
-  // turnoActualDeCategoria en backend/src/routes/competencia.ts).
-  turnoCompletadoEn DateTime?
+  // Momento en que el staff cortó la rutina del competidor en tarima (botón
+  // "Cortar rutina" en Admin > Competencia) — sin esto en null, ningún juez
+  // puede calificar: no hay cronómetro en Preselección, así que el cierre de
+  // la presentación lo decide el staff a mano, no un tiempo fijo. Se resetea
+  // a null cada vez que sube un competidor nuevo (ver avanzarTurnoPreseleccion
+  // en backend/src/routes/competencia.ts).
+  turnoCortadoEn    DateTime?
   updatedAt         DateTime  @updatedAt
 
   @@unique([categoria, escenarioId])
@@ -263,6 +266,14 @@ model Enfrentamiento {
 
   estatus EstatusEnfrentamiento @default(PENDIENTE)
 
+  // Momento real en que arrancó este intento (al pasar a EN_CURSO, o de
+  // nuevo al reiniciar por desempate) — a diferencia de updatedAt, que se
+  // mueve con CUALQUIER cambio (incluido cortar un turno), este campo es fijo
+  // y es la referencia real que usa calcularLimites en el frontend. Sin esto,
+  // cortar un turno desincronizaba el cronómetro en vez de acortarlo (pisaba
+  // updatedAt, que calcularLimites usaba como "inicio").
+  iniciadoEn DateTime?
+
   // Si el admin corta el turno de un competidor antes de que se agote el
   // tiempo (ej. terminó su presentación a los 45s de un turno de 60s), se
   // guarda aquí el momento exacto del corte. La secuencia en /pantalla y en
@@ -272,6 +283,14 @@ model Enfrentamiento {
   // resto del tiempo.
   turnoACortadoEn DateTime?
   turnoBCortadoEn DateTime?
+
+  // Momento en que el SUPER_ADMIN marcó manualmente que ya terminaron de
+  // bailar TODAS las vueltas de este intento (botón "Finalizar rondas de
+  // baile") — habilita de inmediato el envío de calificación de los jueces,
+  // sin esperar el tiempo nominal completo. Se limpia al reiniciar por
+  // desempate, igual que turnoACortadoEn/turnoBCortadoEn. Solo SUPER_ADMIN
+  // (no STAFF_JUECEO) puede marcarlo.
+  bailesFinalizadosEn DateTime?
 
   // Cuántas veces se ha repetido esta MISMA pelea por empate (0 = todavía no
   // hubo empate). Estilo Red Bull BC One "sudden death": en vez de un

@@ -249,7 +249,7 @@ function HeroBody({ preventaEstado, modoPrueba }: { preventaEstado: PreventaEsta
             <Image
                 src="/the-boss-logo.png"
                 alt="THE BOSS — Breaking Battles"
-                width={220}
+                width={271}
                 height={180}
                 priority
                 className="mx-auto drop-shadow-[0_0_30px_rgba(226,9,26,0.3)] lg:mx-0"

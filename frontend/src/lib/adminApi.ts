@@ -60,15 +60,24 @@ export type Enfrentamiento = {
     ganador: CompetidorResumen;
     estatus: EstatusEnfrentamiento;
     updatedAt: string;
+    // Momento real en que arrancó este intento (fijo, a diferencia de
+    // updatedAt que se mueve con cualquier cambio) — lo usa calcularLimites
+    // en SecuenciaBatalla.tsx como referencia de tiempo.
+    iniciadoEn: string | null;
     // Si el SUPER_ADMIN cortó el turno de un competidor antes de tiempo, ver
     // POST /enfrentamientos/:id/cortar-turno y useSecuenciaBatalla.
     turnoACortadoEn: string | null;
     turnoBCortadoEn: string | null;
+    // Si el SUPER_ADMIN marcó que ya terminaron de bailar TODAS las vueltas
+    // (botón "Finalizar rondas de baile") — habilita el envío de
+    // calificación de los jueces sin esperar el tiempo nominal completo. Ver
+    // POST /enfrentamientos/:id/finalizar-baile.
+    bailesFinalizadosEn: string | null;
     // Cuántas veces se ha repetido esta pelea por empate (0 = todavía no
     // hubo empate). Ver useSecuenciaBatalla / fase "empate".
     numeroDesempate: number;
     // Cuántas veces presenta cada competidor antes de que los jueces
-    // califiquen (1 = lo normal; la Final se crea con 2). Ver calcularLimites
+    // califiquen (1 = lo normal; Semifinal 2, Final 3). Ver calcularLimites
     // en SecuenciaBatalla.tsx.
     rondasBaile: number;
     // Solo vienen en GET /enfrentamientos (lo usa /pantalla); en-curso no las
@@ -296,26 +305,39 @@ export function calificarPreseleccion(registrationId: string, puntajes: Puntajes
 }
 
 // Quién está en tarima ahora mismo en la fase de Preselección: lo consumen
-// tanto /pantalla (cronómetro en vivo + resultado, ver
+// tanto /pantalla (nombre+foto, sin cronómetro, ver
 // frontend/src/app/pantalla/SecuenciaPreseleccion.tsx) como admin/jueceo (a
-// quién calificar). `completo`/`puntajeTotal`/`desglose` reflejan el avance
-// de calificación de ESE participante puntual (no confundir con el ranking
-// general de PanelPreseleccion).
+// quién calificar) y Admin > Competencia (botón "Cortar rutina"). `cortado`
+// es la única señal de fase: sin él ningún juez puede calificar — no hay
+// cronómetro en Preselección, el staff decide cuándo cerrar la rutina.
+// `completo`/`calificacionesRecibidas`/`juecesActivos` reflejan el avance de
+// calificación de ESE participante puntual (no confundir con el ranking
+// general de PanelPreseleccion), nunca su puntaje (ver Privacidad de
+// calificaciones en filtros).
 export type TurnoPreseleccion = {
     participante: CompetidorResumen;
     categoria: Categoria;
     escenarioId: string;
     iniciadoEn: string;
+    cortado: boolean;
     calificacionesRecibidas: number;
     juecesActivos: number;
     completo: boolean;
-    puntajeTotal: number | null;
-    desglose: DesglosePuntaje | null;
 } | null;
 
 export function getTurnoPreseleccionActual(categoria: Categoria, escenarioId: string) {
     return adminFetch<{ turno: TurnoPreseleccion }>(
         `/api/competencia/categorias/${categoria}/preseleccion/turno-actual?escenarioId=${escenarioId}`,
+    );
+}
+
+// Solo staff: cierra la rutina del competidor en tarima — a partir de este
+// clic los jueces de ese escenario pueden calificarlo. No hay cronómetro en
+// Preselección, así que esto reemplaza cualquier avance por tiempo.
+export function cortarTurnoPreseleccion(categoria: Categoria, escenarioId: string) {
+    return adminFetch<{ turno: TurnoPreseleccion }>(
+        `/api/competencia/categorias/${categoria}/preseleccion/cortar-turno?escenarioId=${escenarioId}`,
+        { method: "POST" },
     );
 }
 
@@ -384,12 +406,16 @@ export function getResultadosPreseleccion(categoria: Categoria) {
     );
 }
 
-export function siguienteTurnoPreseleccion(categoria: Categoria, escenarioId: string) {
-    return adminFetch<{ turno: TurnoPreseleccion; terminado: boolean }>(
-        `/api/competencia/categorias/${categoria}/preseleccion/siguiente-turno?escenarioId=${escenarioId}`,
-        { method: "POST" },
+// Solo staff: mismo ranking, pero con los puntajes reales SIEMPRE (el
+// endpoint público de arriba los oculta mientras falte alguien por
+// calificar, ver Privacidad de calificaciones en filtros). Lo usa el panel
+// de Admin > Competencia para seguir el avance en vivo.
+export function getResultadosPreseleccionStaff(categoria: Categoria) {
+    return adminFetch<{ resultados: ResultadoPreseleccionItem[] }>(
+        `/api/competencia/categorias/${categoria}/preseleccion/resultados-staff`,
     );
 }
+
 
 export type RankingPreseleccionItem = {
     id: string;
@@ -536,6 +562,15 @@ export function cortarTurno(id: string, turno: "A" | "B") {
     return adminFetch<{ enfrentamiento: Enfrentamiento }>(`/api/competencia/enfrentamientos/${id}/cortar-turno`, {
         method: "POST",
         body: JSON.stringify({ turno }),
+    });
+}
+
+// Solo SUPER_ADMIN: marca que ya terminaron de bailar todas las vueltas de
+// este intento — habilita el envío de calificación de los jueces sin
+// esperar el tiempo nominal completo.
+export function finalizarBaile(id: string) {
+    return adminFetch<{ enfrentamiento: Enfrentamiento }>(`/api/competencia/enfrentamientos/${id}/finalizar-baile`, {
+        method: "POST",
     });
 }
 

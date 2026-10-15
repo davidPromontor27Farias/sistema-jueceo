@@ -60,3 +60,14 @@ export const vistaRegistrosLimiter = rateLimit({
     legacyHeaders: false,
     message: { error: "Demasiadas solicitudes, intenta de nuevo más tarde" },
 });
+
+// Consulta pública de "mi desglose" (competidorId + correo, sin login):
+// deja reintentar si el competidor se equivoca al escribir, pero frena
+// fuerza bruta de alguien tratando de adivinar los datos de otro competidor.
+export const miDesgloseLimiter = rateLimit({
+    windowMs: 5 * 60 * 1000,
+    limit: 20,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: "Demasiados intentos, espera unos minutos e intenta de nuevo" },
+});

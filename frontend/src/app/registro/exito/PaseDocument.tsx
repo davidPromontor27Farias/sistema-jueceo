@@ -22,7 +22,7 @@ const styles = StyleSheet.create({
         marginBottom: 12,
     },
     marcaLogo: {
-        width: 80,
+        width: 120,
         height: 80,
         objectFit: "contain",
     },
@@ -36,8 +36,8 @@ const styles = StyleSheet.create({
     encabezadoTarjeta: {
         fontFamily: "Helvetica-Bold",
         textAlign: "center",
-        fontSize: 12,
-        letterSpacing: 2,
+        fontSize: 11,
+        letterSpacing: 1.2,
         borderBottomWidth: 1,
         borderBottomColor: BORDE,
         paddingBottom: 8,
@@ -203,7 +203,7 @@ export function PaseDocument({
 
                 <View style={styles.tarjeta}>
                     <Text style={styles.encabezadoTarjeta}>
-                        {esPublico ? "OFFICIAL GENERAL PASS" : "OFFICIAL COMPETITOR PASS"}
+                        {esPublico ? "PASE OFICIAL DE PÚBLICO EN GENERAL" : "PASE OFICIAL DE COMPETIDOR"}
                     </Text>
 
                     <View style={styles.fila}>
@@ -238,7 +238,7 @@ export function PaseDocument({
 
                     <View style={styles.banner}>
                         <GarraTigre style={styles.bannerGarra} />
-                        <Text style={styles.bannerTexto}>WHO&apos;LL BE THE BOSS?</Text>
+                        <Text style={styles.bannerTexto}>¿QUIÉN SERÁ THE BOSS?</Text>
                         <GarraTigre style={styles.bannerGarra} volteada />
                     </View>
                 </View>

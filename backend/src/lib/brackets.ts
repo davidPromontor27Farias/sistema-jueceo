@@ -1,9 +1,9 @@
 // Slot de una ronda: competidorB === null significa bye (competidorA avanza
-// automático sin pelear). Se usa un solo tipo para todos los emparejadores
-// para que el orden de la lista (índice 0, 1, 2...) sea siempre el orden real
-// de posición en el árbol del bracket — de eso depende que las rondas
-// siguientes (ver emparejarPorPosicion / intentarAvanzarRonda en
-// backend/src/routes/competencia.ts) conecten con el partido correcto.
+// automático sin pelear). competidorA siempre es el mejor sembrado/puntaje
+// de la pareja — filasParaRonda (backend/src/routes/competencia.ts) invierte
+// esto a propósito al guardarlo en la base, porque ahí competidorA = lado
+// azul = quien inicia, y el reglamento dice que inicia el más débil (ver
+// Lado azul y lado rojo).
 export interface EmparejamientoSlot<T> {
     competidorA: T;
     competidorB: T | null;
@@ -83,22 +83,6 @@ export function emparejarAleatorio<T>(participantes: T[]): EmparejamientoSlot<T>
         mezclados[j] = tmp;
     }
     return emparejarConSiembra(mezclados);
-}
-
-// Empareja SIN sortear, en el orden en que llega la lista (índice 0 con 1, 2
-// con 3, ...). Se usa desde la ronda 2 en adelante: la posición en el árbol
-// ya quedó fija en la ronda 1 (por sorteo o por seeding de preselección), así
-// que aquí solo se respeta esa posición (ganador del partido `orden=0` vs
-// ganador del partido `orden=1`, etc.) para que las líneas conectoras del
-// bracket en /pantalla sean reales. Ya no debería recibir una cantidad impar
-// (la ronda 1 siempre entrega una cantidad que es potencia de 2), pero se
-// deja el manejo de bye por si acaso.
-export function emparejarPorPosicion<T>(participantes: T[]): EmparejamientoSlot<T>[] {
-    const slots: EmparejamientoSlot<T>[] = [];
-    for (let i = 0; i < participantes.length; i += 2) {
-        slots.push({ competidorA: participantes[i]!, competidorB: participantes[i + 1] ?? null });
-    }
-    return slots;
 }
 
 const NOMBRES_DESDE_LA_FINAL = [
