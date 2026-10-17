@@ -279,7 +279,17 @@ export function useSecuenciaBatalla(enfrentamientos: Enfrentamiento[]): EstadoSe
         if (!enCurso || mostradosRef.current.has(enCurso.id)) return;
 
         Promise.resolve().then(() => {
-            const transcurrido = Date.now() - new Date(enCurso.updatedAt).getTime();
+            // Misma referencia que calcularLimites (iniciadoEn, no
+            // updatedAt): updatedAt se mueve con CUALQUIER cambio posterior
+            // (cortar un turno, que un juez califique...), no solo con el
+            // arranque real de la batalla. Usarlo acá desincronizaba el
+            // cálculo de "en qué punto vamos" cada vez que esta pantalla (o
+            // el panel de admin) se montaba de nuevo a mitad de una batalla
+            // de varias vueltas (Semifinal/Final) — después del primer corte
+            // ya no coincidía con iniciadoEn, y podía saltarse vueltas
+            // enteras o repetir una ya pasada.
+            const inicio = new Date(enCurso.iniciadoEn ?? enCurso.updatedAt).getTime();
+            const transcurrido = Date.now() - inicio;
             const { finAnuncio, vueltas } = calcularLimites(enCurso);
 
             if (transcurrido < finAnuncio) {
@@ -359,18 +369,24 @@ export function useSecuenciaBatalla(enfrentamientos: Enfrentamiento[]): EstadoSe
     // duración completa): si el corte llega por el siguiente poll, cancela ese
     // timer y pasa de inmediato a la siguiente fase, sin esperar el resto del
     // tiempo. Sin esto, calcularLimites() solo ayudaría a la próxima pantalla
-    // que cargue de cero, no a las que ya están a la mitad del turno. Mismo
-    // límite conocido que calcularLimites: un corte por lado por batalla (si
-    // la Final tiene 2 vueltas y se corta el mismo lado en ambas, solo el
-    // corte más reciente se detecta).
+    // que cargue de cero, no a las que ya están a la mitad del turno.
+    //
+    // Compara el VALOR del timestamp (no solo si ya había alguno) porque en
+    // Semifinal/Final (rondasBaile 2-3) el mismo lado se corta una vez por
+    // vuelta: `activo` sigue cargando el timestamp de la vuelta anterior
+    // (nunca se limpia entre vueltas, ver backend POST
+    // .../enfrentamientos/:id/cortar-turno), así que comparar solo "¿ya tenía
+    // algo?" ignoraba cualquier corte a partir de la segunda vuelta. Comparar
+    // el valor detecta que SÍ cambió (es un corte nuevo) aunque el campo ya
+    // viniera con algo de una vuelta anterior.
     useEffect(() => {
         if ((fase !== "turno_a" && fase !== "turno_b") || !activo) return;
         const actualizado = enfrentamientos.find((e) => e.id === activo.id);
         if (!actualizado) return;
 
-        const yaCortado = fase === "turno_a" ? !!activo.turnoACortadoEn : !!activo.turnoBCortadoEn;
-        const ahoraCortado = fase === "turno_a" ? !!actualizado.turnoACortadoEn : !!actualizado.turnoBCortadoEn;
-        if (yaCortado || !ahoraCortado) return;
+        const cortadoActivo = fase === "turno_a" ? activo.turnoACortadoEn : activo.turnoBCortadoEn;
+        const cortadoActualizado = fase === "turno_a" ? actualizado.turnoACortadoEn : actualizado.turnoBCortadoEn;
+        if (!cortadoActualizado || cortadoActualizado === cortadoActivo) return;
 
         Promise.resolve().then(() => {
             const totalVueltas = Math.max(1, actualizado.rondasBaile || 1);
