@@ -1925,10 +1925,16 @@ competenciaRouter.post("/enfrentamientos/:id/cortar-turno", requireRole("SUPER_A
         return res.status(400).json({ error: "Esta batalla no está en curso" });
     }
 
+    // No se bloquea si ya había un corte previo: en Semifinal/Final
+    // (rondasBaile 2-3) el mismo lado (A o B) presenta varias vueltas
+    // seguidas, y el staff debe poder cortar CADA vuelta por separado. Este
+    // campo es un solo timestamp por lado (no uno por vuelta) a propósito —
+    // calcularLimites en frontend/src/app/pantalla/SecuenciaBatalla.tsx le
+    // asigna el corte a la vuelta cuya ventana (sin cortar) lo contiene, así
+    // que sobreescribirlo con el corte más reciente es lo correcto: la
+    // vuelta ya resuelta no necesita su valor viejo, y el botón "Finalizar
+    // rondas de baile" sigue disponible como respaldo si hace falta.
     const campo = turno === "A" ? "turnoACortadoEn" : "turnoBCortadoEn";
-    if (enfrentamiento[campo]) {
-        return res.status(409).json({ error: "Ese turno ya fue cortado" });
-    }
 
     const actualizado = await prisma.enfrentamiento.update({
         where: { id },
