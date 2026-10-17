@@ -10,55 +10,69 @@ import { ChispasFondo, FotoCompetidorVs } from "./SecuenciaBatalla";
 // useRecapPreseleccion) una vez que se acabó la fila de turnos.
 const DURACION_RECAP_POR_PARTICIPANTE_MS = 3_000;
 
-// Sin cronómetro en Preselección (ver Mejoras de Preselección): solo dos
-// estados visuales posibles mientras alguien está en tarima. El cambio entre
-// uno y otro lo decide el staff con el botón "Cortar rutina" (ver
-// turno.cortado), nunca un tiempo fijo.
+// Sin cronómetro en Preselección (ver Control manual de rutina): el cambio
+// de fase lo decide el staff a mano, nunca un tiempo fijo.
+// "esperando": no hay nadie en tarima todavía, pero quedan competidores en
+// la cola — el staff no ha presionado "Iniciar turno". Sin nombre ni foto a
+// propósito (no adelantar quién sigue), y por supuesto sin cronómetro.
 // "en_tarima": el competidor está presentándose — nombre + foto, nada más.
 // "calificando": el staff ya cortó su rutina y los jueces pueden calificar
 // — tampoco se muestra ningún puntaje acá (ver Privacidad de calificaciones
 // en filtros): el puntaje real solo se revela en el recorrido de resultados,
-// una vez que TODOS ya pasaron (ver useRecapPreseleccion más abajo).
-type FaseSecuenciaPreseleccion = "normal" | "en_tarima" | "calificando";
+// una vez que se genera el Top Bracket (ver useRecapPreseleccion más abajo).
+type FaseSecuenciaPreseleccion = "normal" | "esperando" | "en_tarima" | "calificando";
 
 export type EstadoSecuenciaPreseleccion = {
     fase: FaseSecuenciaPreseleccion;
     turno: TurnoPreseleccion;
 };
 
-// Deriva la fase directamente del turno vigente (poll cada 3s desde el
-// padre) — no hay ningún timer propio que mantener: sin cronómetro, no hay
-// nada que contar hacia atrás, solo reflejar lo que diga el backend.
-export function useSecuenciaPreseleccion(turno: TurnoPreseleccion): EstadoSecuenciaPreseleccion {
-    if (!turno?.participante) return { fase: "normal", turno: null };
+// Deriva la fase directamente del turno vigente + si quedan pendientes (poll
+// cada 3s desde el padre) — no hay ningún timer propio que mantener: sin
+// cronómetro, no hay nada que contar hacia atrás, solo reflejar lo que diga
+// el backend.
+export function useSecuenciaPreseleccion(turno: TurnoPreseleccion, hayPendientes: boolean): EstadoSecuenciaPreseleccion {
+    if (!turno?.participante) return { fase: hayPendientes ? "esperando" : "normal", turno: null };
     return { fase: turno.cortado ? "calificando" : "en_tarima", turno };
 }
 
-export function SecuenciaPreseleccionOverlay({ fase, turno }: EstadoSecuenciaPreseleccion) {
-    if (fase === "normal" || !turno) return null;
+export function SecuenciaPreseleccionOverlay({
+    fase,
+    turno,
+    categoria,
+}: EstadoSecuenciaPreseleccion & { categoria: Categoria }) {
+    if (fase === "normal") return null;
 
-    const competidor = turno.participante;
+    const competidor = turno?.participante ?? null;
     const nombre = competidor ? competidor.nombreArtistico || `${competidor.nombres} ${competidor.apellidos}` : "";
 
     return (
         <main className="fixed inset-0 z-50 flex flex-col items-center justify-center overflow-hidden bg-boss-black px-8 text-center">
             <p className="absolute inset-x-0 top-10 z-10 font-display text-lg uppercase tracking-widest text-boss-gray">
-                {CATEGORIAS[turno.categoria]} · Preselección
+                {CATEGORIAS[categoria]} · Preselección
             </p>
 
-            <div key={competidor?.id ?? "sin-competidor"} className="animate-reflector-entrada absolute inset-0">
+            <div key={competidor?.id ?? "esperando"} className="animate-reflector-entrada absolute inset-0">
                 <div className={fase === "en_tarima" ? "fondo-reflector-azul absolute inset-0" : "fondo-vs-azul absolute inset-0"} />
                 <ChispasFondo />
 
                 <div className="relative z-10 flex h-full flex-col items-center justify-center gap-3 pt-10">
-                    <FotoCompetidorVs competidor={competidor} grande />
-
-                    <p className="max-w-[85%] truncate font-display text-3xl uppercase text-white sm:text-5xl">{nombre}</p>
-
-                    {fase === "calificando" && (
-                        <p className="animate-pulso-suave font-display text-4xl uppercase italic text-white [text-shadow:0_4px_0_rgba(0,0,0,0.5),0_0_24px_rgba(255,255,255,0.6)] sm:text-6xl">
-                            Calificando
+                    {fase === "esperando" ? (
+                        <p className="animate-pulso-suave font-display text-3xl uppercase italic text-white sm:text-5xl">
+                            Siguiente competidor en un momento
                         </p>
+                    ) : (
+                        <>
+                            <FotoCompetidorVs competidor={competidor} grande />
+
+                            <p className="max-w-[85%] truncate font-display text-3xl uppercase text-white sm:text-5xl">{nombre}</p>
+
+                            {fase === "calificando" && (
+                                <p className="animate-pulso-suave font-display text-4xl uppercase italic text-white [text-shadow:0_4px_0_rgba(0,0,0,0.5),0_0_24px_rgba(255,255,255,0.6)] sm:text-6xl">
+                                    Calificando
+                                </p>
+                            )}
+                        </>
                     )}
                 </div>
             </div>
@@ -69,19 +83,21 @@ export function SecuenciaPreseleccionOverlay({ fase, turno }: EstadoSecuenciaPre
 // Una columna de la pantalla dividida: refleja el turno de SU escenario, sin
 // ningún cronómetro ni timer propio, igual que SecuenciaPreseleccionOverlay
 // pero en una franja angosta. El padre (SecuenciaPreseleccionMultiOverlay) ya
-// filtró a solo escenarios con turno activo — si de todas formas llega sin
-// turno, no dibuja nada.
+// filtró a solo escenarios con turno activo o esperando — si de todas formas
+// llega en fase "normal", no dibuja nada.
 function ColumnaEscenario({
     escenarioNombre,
     turno,
+    hayPendientes,
 }: {
     escenarioNombre: string;
     turno: TurnoPreseleccion;
+    hayPendientes: boolean;
 }) {
-    const { fase, turno: t } = useSecuenciaPreseleccion(turno);
-    if (fase === "normal" || !t) return null;
+    const { fase, turno: t } = useSecuenciaPreseleccion(turno, hayPendientes);
+    if (fase === "normal") return null;
 
-    const competidor = t.participante;
+    const competidor = t?.participante ?? null;
     const nombre = competidor ? competidor.nombreArtistico || `${competidor.nombres} ${competidor.apellidos}` : "";
 
     return (
@@ -94,33 +110,42 @@ function ColumnaEscenario({
                     {escenarioNombre}
                 </span>
 
-                <FotoCompetidorVs competidor={competidor} />
-
-                <p className="max-w-[92%] truncate font-display text-2xl uppercase text-white sm:text-4xl">{nombre}</p>
-
-                {fase === "calificando" && (
-                    <p className="animate-pulso-suave font-display text-base uppercase italic text-white sm:text-xl">
-                        Calificando
+                {fase === "esperando" ? (
+                    <p className="animate-pulso-suave font-display text-lg uppercase italic text-white sm:text-2xl">
+                        Siguiente en un momento
                     </p>
+                ) : (
+                    <>
+                        <FotoCompetidorVs competidor={competidor} />
+
+                        <p className="max-w-[92%] truncate font-display text-2xl uppercase text-white sm:text-4xl">{nombre}</p>
+
+                        {fase === "calificando" && (
+                            <p className="animate-pulso-suave font-display text-base uppercase italic text-white sm:text-xl">
+                                Calificando
+                            </p>
+                        )}
+                    </>
                 )}
             </div>
         </div>
     );
 }
 
-// Pantalla dividida según cuántos escenarios tienen a alguien en tarima
-// AHORA MISMO (uno hasta tres, o los que sean): 1 columna si solo queda un
-// escenario activo, 2 o 3 si varios están corriendo en simultáneo. El padre
-// (pantalla/page.tsx) ya filtró `entradas` a solo los escenarios con turno
-// activo, así que la cantidad de columnas se ajusta sola cuando algún
-// escenario termina su fila (esa columna simplemente deja de venir en la
-// lista y las demás se reacomodan).
+// Pantalla dividida según cuántos escenarios tienen a alguien en tarima O
+// están esperando el siguiente turno AHORA MISMO (uno hasta tres, o los que
+// sean): 1 columna si solo queda un escenario activo, 2 o 3 si varios están
+// corriendo en simultáneo. El padre (pantalla/page.tsx) ya filtró `entradas`
+// a solo los escenarios con turno activo o pendientes, así que la cantidad
+// de columnas se ajusta sola cuando algún escenario termina su fila de
+// verdad (esa columna simplemente deja de venir en la lista y las demás se
+// reacomodan).
 export function SecuenciaPreseleccionMultiOverlay({
     categoria,
     entradas,
 }: {
     categoria: Categoria;
-    entradas: { escenarioId: string; escenarioNombre: string; turno: TurnoPreseleccion }[];
+    entradas: { escenarioId: string; escenarioNombre: string; turno: TurnoPreseleccion; hayPendientes: boolean }[];
 }) {
     if (entradas.length === 0) return null;
 
@@ -133,7 +158,12 @@ export function SecuenciaPreseleccionMultiOverlay({
             </p>
             <div className={`grid h-full w-full ${colsClase}`}>
                 {entradas.map((e) => (
-                    <ColumnaEscenario key={e.escenarioId} escenarioNombre={e.escenarioNombre} turno={e.turno} />
+                    <ColumnaEscenario
+                        key={e.escenarioId}
+                        escenarioNombre={e.escenarioNombre}
+                        turno={e.turno}
+                        hayPendientes={e.hayPendientes}
+                    />
                 ))}
             </div>
         </main>
@@ -172,7 +202,13 @@ export function useRecapPreseleccion(
     const mostradosRef = useRef<Set<Categoria>>(new Set());
     const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-    const listos = resultados.length > 0 && resultados.every((r) => r.completo);
+    // `puntajeTotal !== null` confirma que el backend YA reveló puntajes
+    // reales (ver preseleccionRevelada en backend/src/routes/competencia.ts)
+    // — sin este chequeo el recorrido podía arrancar apenas todos quedaban
+    // calificados, mostrando "0 pts" para todos ANTES de que el admin
+    // generara el Top Bracket (ver Privacidad de calificaciones en filtros).
+    const listos =
+        resultados.length > 0 && resultados.every((r) => r.completo) && resultados.every((r) => r.puntajeTotal !== null);
 
     useEffect(() => {
         if (!categoria || hayTurnoActivo || !listos || !permitirRecap) return;

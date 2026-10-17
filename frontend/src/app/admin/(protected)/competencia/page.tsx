@@ -18,6 +18,7 @@ import {
     getResultadosPreseleccionStaff,
     getTurnoPreseleccionActual,
     iniciarPreseleccion,
+    iniciarTurnoPreseleccion,
     patchCategoriaEstado,
     patchPantallaEstado,
     updateEnfrentamiento,
@@ -327,8 +328,8 @@ function PanelPreseleccion({ categoria, estatus }: { categoria: Categoria; estat
             </h2>
             <p className="mt-1 text-sm text-boss-gray">
                 {estatus === "REPECHAJE_DESEMPATE"
-                    ? "Hay un empate exacto en la frontera del corte. Los competidores empatados vuelven a presentarse, uno a uno, en su mismo escenario de origen — se resuelve solo en cuanto los jueces de ese escenario terminen de recalificarlos, sin necesidad de ninguna acción manual."
-                    : "Cada juez puntúa individualmente a cada competidor pagado, dentro de su propio escenario. El corte automático toma la potencia de 2 más grande (4/8/16/32/64) que no exceda el total calificado, con seeding: mejor puntaje contra peor puntaje."}
+                    ? "Hay un empate exacto en la frontera del corte. Los competidores empatados se consolidan en un solo escenario (los demás se deshabilitan para esta ronda) y vuelven a presentarse uno a uno — usa \"Iniciar turno\" y \"Cortar rutina\" igual que en la preselección normal. En cuanto los jueces terminen de recalificarlos se resuelve solo."
+                    : "Cada juez puntúa individualmente a cada competidor pagado, dentro de su propio escenario. Usa \"Iniciar turno\" para subir a cada competidor y \"Cortar rutina\" al terminar su presentación. El corte automático toma la potencia de 2 más grande (4/8/16/32/64) que no exceda el total calificado, con seeding: mejor puntaje contra peor puntaje."}
             </p>
 
             {error && <p className="mt-3 text-sm font-medium text-red-400">{error}</p>}
@@ -410,11 +411,12 @@ function PanelPreseleccion({ categoria, estatus }: { categoria: Categoria; estat
 
 // Un sub-panel de turno por escenario activo: quién está en tarima ahora
 // mismo en ESE escenario (cola independiente, ver Preselección Paralela
-// Multiescenario). Sin cronómetro: el único control manual es "Cortar
-// rutina" cuando el competidor termina de presentarse (recién ahí los
-// jueces pueden calificarlo) — en cuanto califican todos, el backend sube
-// solo al siguiente de la cola, sin ningún botón (ver avanzarTurnoPreseleccion
-// en backend/src/routes/competencia.ts).
+// Multiescenario). Control manual de rutina: "Cortar rutina" cuando el
+// competidor termina de presentarse (recién ahí los jueces pueden
+// calificarlo), e "Iniciar turno" para subir al siguiente — ya no hay ningún
+// avance automático (ver avanzarTurnoPreseleccion en
+// backend/src/routes/competencia.ts): el staff decide cuándo empieza cada
+// quien, los escenarios en paralelo avanzan cada uno a su propio ritmo.
 function TurnoEscenarioPanel({
     categoria,
     escenarioId,
@@ -425,14 +427,19 @@ function TurnoEscenarioPanel({
     escenarioNombre: string;
 }) {
     const [turno, setTurno] = useState<TurnoPreseleccion>(null);
+    const [hayPendientes, setHayPendientes] = useState(false);
     const [cortando, setCortando] = useState(false);
+    const [iniciando, setIniciando] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
         let cancelado = false;
         const poll = async () => {
             const resTurno = await getTurnoPreseleccionActual(categoria, escenarioId);
-            if (!cancelado && resTurno.ok) setTurno(resTurno.data.turno);
+            if (!cancelado && resTurno.ok) {
+                setTurno(resTurno.data.turno);
+                setHayPendientes(resTurno.data.hayPendientes);
+            }
         };
         poll();
         const id = setInterval(poll, 4000);
@@ -454,6 +461,24 @@ function TurnoEscenarioPanel({
         setTurno(resultado.data.turno);
     };
 
+    const iniciarTurno = async () => {
+        setIniciando(true);
+        setError(null);
+        const resultado = await iniciarTurnoPreseleccion(categoria, escenarioId);
+        setIniciando(false);
+        if (!resultado.ok) {
+            setError(resultado.error);
+            return;
+        }
+        setTurno(resultado.data.turno);
+    };
+
+    const calificacionCompleta = !!turno?.participante && turno.cortado && turno.calificacionesRecibidas >= turno.juecesActivos;
+    // "Iniciar turno" aplica tanto para subir al primero (nadie en tarima,
+    // quedan pendientes) como para reemplazar a quien ya terminó de
+    // calificarse.
+    const mostrarIniciarTurno = (!turno?.participante && hayPendientes) || calificacionCompleta;
+
     return (
         <div className="rounded-md border border-boss-border bg-boss-black/40 p-3">
             <p className="text-xs font-semibold uppercase tracking-widest text-boss-gray">{escenarioNombre}</p>
@@ -462,28 +487,42 @@ function TurnoEscenarioPanel({
                     <p className="font-display text-lg uppercase text-white">
                         {turno?.participante
                             ? turno.participante.nombreArtistico || `${turno.participante.nombres} ${turno.participante.apellidos}`
-                            : "— nadie —"}
+                            : hayPendientes
+                              ? "— esperando —"
+                              : "— fila terminada —"}
                     </p>
                     {turno?.participante && (
                         <p className="text-xs text-boss-gray">
                             {!turno.cortado
                                 ? "Presentándose — todavía no se corta la rutina"
-                                : turno.calificacionesRecibidas >= turno.juecesActivos
-                                  ? "Avanzando al siguiente automáticamente…"
+                                : calificacionCompleta
+                                  ? "Calificación completa — listo para el siguiente"
                                   : `${turno.calificacionesRecibidas}/${turno.juecesActivos} jueces calificaron`}
                         </p>
                     )}
                 </div>
-                {turno?.participante && !turno.cortado && (
-                    <button
-                        type="button"
-                        onClick={cortarRutina}
-                        disabled={cortando}
-                        className="rounded-md border border-boss-red px-3 py-2 text-xs font-semibold uppercase tracking-wide text-boss-red transition-colors hover:bg-boss-red hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                        {cortando ? "..." : "Cortar rutina"}
-                    </button>
-                )}
+                <div className="flex gap-2">
+                    {turno?.participante && !turno.cortado && (
+                        <button
+                            type="button"
+                            onClick={cortarRutina}
+                            disabled={cortando}
+                            className="rounded-md border border-boss-red px-3 py-2 text-xs font-semibold uppercase tracking-wide text-boss-red transition-colors hover:bg-boss-red hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                            {cortando ? "..." : "Cortar rutina"}
+                        </button>
+                    )}
+                    {mostrarIniciarTurno && (
+                        <button
+                            type="button"
+                            onClick={iniciarTurno}
+                            disabled={iniciando}
+                            className="rounded-md bg-boss-red px-3 py-2 text-xs font-semibold uppercase tracking-wide text-white transition-colors hover:bg-boss-red-dark disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                            {iniciando ? "..." : "Iniciar turno"}
+                        </button>
+                    )}
+                </div>
             </div>
             {error && <p className="mt-2 text-xs font-medium text-red-400">{error}</p>}
         </div>

@@ -85,9 +85,12 @@ function PantallaPublicaContenido() {
     const [enfrentamientos, setEnfrentamientos] = useState<Enfrentamiento[]>([]);
     const [todosLosEnfrentamientos, setTodosLosEnfrentamientos] = useState<Enfrentamiento[]>([]);
     const [turnoPreseleccion, setTurnoPreseleccion] = useState<TurnoPreseleccion>(null);
+    const [hayPendientesEscenario, setHayPendientesEscenario] = useState(false);
     const [resultadosPreseleccion, setResultadosPreseleccion] = useState<ResultadoPreseleccionItem[]>([]);
     const [escenariosCategoria, setEscenariosCategoria] = useState<{ id: string; nombre: string }[]>([]);
-    const [turnosPorEscenario, setTurnosPorEscenario] = useState<Record<string, TurnoPreseleccion>>({});
+    const [turnosPorEscenario, setTurnosPorEscenario] = useState<
+        Record<string, { turno: TurnoPreseleccion; hayPendientes: boolean }>
+    >({});
     const [estatusPorCategoria, setEstatusPorCategoria] = useState<Record<string, EstatusCompetencia>>({});
     const escenarioId = useEscenarioEfectivo(estado?.categoriaEnfocada);
 
@@ -157,6 +160,7 @@ function PantallaPublicaContenido() {
     useEffect(() => {
         if (!estado?.categoriaEnfocada || !escenarioId) {
             setTurnoPreseleccion(null);
+            setHayPendientesEscenario(false);
             return;
         }
 
@@ -164,7 +168,10 @@ function PantallaPublicaContenido() {
         let cancelado = false;
         const poll = async () => {
             const resultado = await getTurnoPreseleccionActual(categoria, escenarioId);
-            if (!cancelado && resultado.ok) setTurnoPreseleccion(resultado.data.turno);
+            if (!cancelado && resultado.ok) {
+                setTurnoPreseleccion(resultado.data.turno);
+                setHayPendientesEscenario(resultado.data.hayPendientes);
+            }
         };
         poll();
         const id = setInterval(poll, INTERVALO_MS);
@@ -198,7 +205,12 @@ function PantallaPublicaContenido() {
             const turnos = await Promise.all(
                 escenarios.map(async (esc) => {
                     const resTurno = await getTurnoPreseleccionActual(categoria, esc.id);
-                    return [esc.id, resTurno.ok ? resTurno.data.turno : null] as const;
+                    return [
+                        esc.id,
+                        resTurno.ok
+                            ? { turno: resTurno.data.turno, hayPendientes: resTurno.data.hayPendientes }
+                            : { turno: null, hayPendientes: false },
+                    ] as const;
                 }),
             );
             if (cancelado) return;
@@ -256,20 +268,24 @@ function PantallaPublicaContenido() {
 
     const secuencia = useSecuenciaBatalla(enfrentamientos);
     // Solo se usa de verdad en modo ?escenario= (pantalla fija a un
-    // escenario); en modo general va alimentada con turnoPreseleccion=null
-    // (el poll de arriba lo deja así cuando hay escenarioParam), así que su
-    // fase siempre es "normal" y no estorba.
-    const secuenciaPreseleccion = useSecuenciaPreseleccion(turnoPreseleccion);
+    // escenario); en modo general va alimentada con turnoPreseleccion=null y
+    // hayPendientesEscenario=false (el poll de arriba los deja así cuando
+    // hay escenarioParam), así que su fase siempre es "normal" y no estorba.
+    const secuenciaPreseleccion = useSecuenciaPreseleccion(turnoPreseleccion, hayPendientesEscenario);
 
-    // Pantalla dividida: solo los escenarios que tienen a alguien en tarima
-    // AHORA MISMO entran al grid — si un escenario termina su fila, su
-    // columna desaparece sola en el siguiente poll (ver
-    // SecuenciaPreseleccionMultiOverlay).
+    // Pantalla dividida: los escenarios que tienen a alguien en tarima O
+    // siguen esperando a que el staff presione "Iniciar turno" (quedan
+    // pendientes) entran al grid — solo cuando un escenario de verdad
+    // terminó su fila (sin turno y sin pendientes) su columna desaparece del
+    // siguiente poll (ver SecuenciaPreseleccionMultiOverlay).
     const entradasActivas = escenariosCategoria
-        .map((esc) => ({ escenarioId: esc.id, escenarioNombre: esc.nombre, turno: turnosPorEscenario[esc.id] ?? null }))
-        .filter((e): e is { escenarioId: string; escenarioNombre: string; turno: NonNullable<TurnoPreseleccion> } => e.turno !== null);
+        .map((esc) => {
+            const info = turnosPorEscenario[esc.id] ?? { turno: null, hayPendientes: false };
+            return { escenarioId: esc.id, escenarioNombre: esc.nombre, turno: info.turno, hayPendientes: info.hayPendientes };
+        })
+        .filter((e) => e.turno !== null || e.hayPendientes);
 
-    const hayTurnoActivo = escenarioParam ? !!turnoPreseleccion : entradasActivas.length > 0;
+    const hayTurnoActivo = escenarioParam ? !!turnoPreseleccion || hayPendientesEscenario : entradasActivas.length > 0;
     // El recorrido de resultados solo es elegible mientras la categoría
     // sigue en Preselección/Repechaje — una vez que pasa a bracket o
     // finaliza, dejar de ofrecerlo evita que una recarga de /pantalla lo
@@ -303,13 +319,18 @@ function PantallaPublicaContenido() {
         );
     }
 
-    // Modo pantalla-de-un-escenario (?escenario=<id>): sin cambios, pantalla
-    // completa fija a ese único turno.
-    if (escenarioParam && secuenciaPreseleccion.fase !== "normal") {
+    // Modo pantalla-de-un-escenario (?escenario=<id>): pantalla completa fija
+    // a ese único turno (o a "esperando" mientras no hay nadie en tarima
+    // pero quedan pendientes).
+    if (escenarioParam && secuenciaPreseleccion.fase !== "normal" && estado?.categoriaEnfocada) {
         return (
             <>
                 <ModoPruebaBadge />
-                <SecuenciaPreseleccionOverlay fase={secuenciaPreseleccion.fase} turno={secuenciaPreseleccion.turno} />
+                <SecuenciaPreseleccionOverlay
+                    fase={secuenciaPreseleccion.fase}
+                    turno={secuenciaPreseleccion.turno}
+                    categoria={estado.categoriaEnfocada}
+                />
             </>
         );
     }

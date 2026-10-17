@@ -325,8 +325,11 @@ export type TurnoPreseleccion = {
     completo: boolean;
 } | null;
 
+// `hayPendientes`: si queda alguien en la cola de este escenario sin haber
+// empezado su turno todavía (sin contar a quien ya está en tarima) — decide
+// si el panel ofrece "Iniciar turno" o "Fila terminada".
 export function getTurnoPreseleccionActual(categoria: Categoria, escenarioId: string) {
-    return adminFetch<{ turno: TurnoPreseleccion }>(
+    return adminFetch<{ turno: TurnoPreseleccion; hayPendientes: boolean }>(
         `/api/competencia/categorias/${categoria}/preseleccion/turno-actual?escenarioId=${escenarioId}`,
     );
 }
@@ -337,6 +340,16 @@ export function getTurnoPreseleccionActual(categoria: Categoria, escenarioId: st
 export function cortarTurnoPreseleccion(categoria: Categoria, escenarioId: string) {
     return adminFetch<{ turno: TurnoPreseleccion }>(
         `/api/competencia/categorias/${categoria}/preseleccion/cortar-turno?escenarioId=${escenarioId}`,
+        { method: "POST" },
+    );
+}
+
+// Control manual de rutina: sube manualmente al siguiente competidor de la
+// cola de UN escenario — reemplaza el avance automático que subía solo en
+// cuanto todos los jueces calificaban al anterior. El staff decide cuándo.
+export function iniciarTurnoPreseleccion(categoria: Categoria, escenarioId: string) {
+    return adminFetch<{ turno: TurnoPreseleccion }>(
+        `/api/competencia/categorias/${categoria}/preseleccion/iniciar-turno?escenarioId=${escenarioId}`,
         { method: "POST" },
     );
 }
