@@ -616,10 +616,20 @@ competenciaRouter.post(
             }),
         ]);
 
-        // El staff sube manualmente al primer competidor de cada escenario
-        // con el botón "Iniciar turno" — no hay ningún avance automático acá
-        // (ver POST .../preseleccion/iniciar-turno y Control manual de
-        // rutina): el admin decide cuándo arranca cada tarima.
+        // Sube automáticamente al primer competidor de cada escenario a
+        // tarima — el staff ya no tiene que apretar "Siguiente" a mano para
+        // arrancar cada cola (ver avanzarTurnoPreseleccion). Esta es la
+        // ÚNICA vez que "arrancar" requiere una acción del admin (el botón
+        // "Iniciar preselección" de la categoría); de ahí en adelante el
+        // avance entre competidores es automático en cuanto califican todos
+        // los jueces (ver POST /preseleccion/:registrationId/calificar). El
+        // botón manual "Iniciar turno" (POST .../preseleccion/iniciar-turno)
+        // sigue existiendo como respaldo manual, pero no hace falta usarlo
+        // en el flujo normal.
+        for (const esc of escenariosActivos) {
+            await avanzarTurnoPreseleccion(categoria, esc.id);
+        }
+
         const reparto = escenariosActivos.map((esc, i) => ({
             escenarioId: esc.id,
             escenarioNombre: esc.nombre,
@@ -823,20 +833,33 @@ competenciaRouter.post("/preseleccion/:registrationId/calificar", requireRole("J
         return res.status(500).json({ error: "No se pudo guardar la calificación" });
     }
 
+    const [juecesActivos, { calificacionesRecibidas }] = await Promise.all([
+        juecesActivosEnEscenario(escenarioId!),
+        puntajePreseleccion(registrationId, numeroDesempate),
+    ]);
+    const turnoCompleto = juecesActivos > 0 && calificacionesRecibidas >= juecesActivos;
+
     // Si la categoría está resolviendo un empate en la frontera de corte,
     // revisa si con esta calificación ya se completó la ronda vigente de
     // TODOS los empatados — de ser así, recorta de nuevo (puede resolverse y
-    // armar el Top Bracket, o lanzar otra ronda extra y reiniciarla).
+    // armar el Top Bracket, o lanzar otra ronda extra y reiniciarla). Se hace
+    // ANTES de avanzar el turno para que, si se lanza una ronda nueva, el
+    // avance de abajo suba directo al primero de esa ronda nueva.
     if (estado.estatus === "REPECHAJE_DESEMPATE") {
         await intentarResolverRepechaje(registro.categoria);
     }
 
-    // Control manual de rutina: ya NO sube solo al siguiente competidor en
-    // cuanto todos los jueces califican — el staff decide cuándo con el
-    // botón "Iniciar turno" (ver POST .../preseleccion/iniciar-turno). El
-    // escenario se queda sin nadie en tarima (turnoActualId ya en null,
-    // puesto por el "Cortar rutina" que precedió a esta calificación) hasta
-    // que el staff lo presione.
+    // Avance automático: en cuanto todos los jueces activos de este
+    // escenario califican, sube solo al siguiente competidor — no hace
+    // falta ningún botón (el control manual del staff es "Cortar rutina",
+    // que decide CUÁNDO termina cada presentación; una vez calificada por
+    // todos, pasar al siguiente ya no requiere ninguna acción). Si la
+    // categoría ya salió de Preselección/Repechaje (ej. esta calificación
+    // resolvió el repechaje y ya se generó el bracket), avanzarTurnoPreseleccion
+    // simplemente no hace nada — se ignora el error.
+    if (turnoCompleto) {
+        await avanzarTurnoPreseleccion(registro.categoria, escenarioId!).catch((error) => console.error(error));
+    }
 
     return res.status(201).json({ ok: true });
 });
@@ -1627,10 +1650,10 @@ async function resolverCorteOLanzarRepechaje(categoria: Categoria): Promise<Resu
             }),
         ]);
 
-        // El staff sube manualmente al primer empatado con "Iniciar turno"
-        // en el único panel que queda visible para esta categoría — mismo
-        // criterio de Control manual de rutina que el resto de Preselección,
-        // sin avance automático.
+        // Sube automáticamente al primer empatado en el único escenario
+        // consolidado — mismo criterio que al iniciar la Preselección, el
+        // staff no tiene que subirlo a mano.
+        await avanzarTurnoPreseleccion(categoria, escenarioDestino);
 
         return { tipo: "repechaje", empatados: corte.empatados };
     }

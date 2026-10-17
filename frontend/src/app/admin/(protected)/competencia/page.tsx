@@ -328,8 +328,8 @@ function PanelPreseleccion({ categoria, estatus }: { categoria: Categoria; estat
             </h2>
             <p className="mt-1 text-sm text-boss-gray">
                 {estatus === "REPECHAJE_DESEMPATE"
-                    ? "Hay un empate exacto en la frontera del corte. Los competidores empatados se consolidan en un solo escenario (los demás se deshabilitan para esta ronda) y vuelven a presentarse uno a uno — usa \"Iniciar turno\" y \"Cortar rutina\" igual que en la preselección normal. En cuanto los jueces terminen de recalificarlos se resuelve solo."
-                    : "Cada juez puntúa individualmente a cada competidor pagado, dentro de su propio escenario. Usa \"Iniciar turno\" para subir a cada competidor y \"Cortar rutina\" al terminar su presentación. El corte automático toma la potencia de 2 más grande (4/8/16/32/64) que no exceda el total calificado, con seeding: mejor puntaje contra peor puntaje."}
+                    ? "Hay un empate exacto en la frontera del corte. Los competidores empatados se consolidan en un solo escenario (los demás se deshabilitan para esta ronda) y vuelven a presentarse uno a uno — usa \"Cortar rutina\" al terminar cada presentación, el siguiente sube solo en cuanto los jueces califican. Se resuelve solo en cuanto terminen de recalificarlos."
+                    : "Cada juez puntúa individualmente a cada competidor pagado, dentro de su propio escenario. Usa \"Cortar rutina\" al terminar la presentación de cada quien — en cuanto todos los jueces califican, el siguiente sube solo a tarima. El corte automático toma la potencia de 2 más grande (4/8/16/32/64) que no exceda el total calificado, con seeding: mejor puntaje contra peor puntaje."}
             </p>
 
             {error && <p className="mt-3 text-sm font-medium text-red-400">{error}</p>}
@@ -411,12 +411,14 @@ function PanelPreseleccion({ categoria, estatus }: { categoria: Categoria; estat
 
 // Un sub-panel de turno por escenario activo: quién está en tarima ahora
 // mismo en ESE escenario (cola independiente, ver Preselección Paralela
-// Multiescenario). Control manual de rutina: "Cortar rutina" cuando el
-// competidor termina de presentarse (recién ahí los jueces pueden
-// calificarlo), e "Iniciar turno" para subir al siguiente — ya no hay ningún
-// avance automático (ver avanzarTurnoPreseleccion en
-// backend/src/routes/competencia.ts): el staff decide cuándo empieza cada
-// quien, los escenarios en paralelo avanzan cada uno a su propio ritmo.
+// Multiescenario). Control manual de rutina: el ÚNICO control que el staff
+// usa en el flujo normal es "Cortar rutina" cuando el competidor termina de
+// presentarse (recién ahí los jueces pueden calificarlo) — en cuanto
+// califican todos, el siguiente sube solo a tarima (ver
+// avanzarTurnoPreseleccion en backend/src/routes/competencia.ts), sin
+// esperar ninguna acción del admin. "Iniciar turno" queda como respaldo
+// manual por si algún escenario se queda sin nadie en tarima (ej. tras un
+// error), pero no hace falta usarlo en operación normal.
 function TurnoEscenarioPanel({
     categoria,
     escenarioId,
