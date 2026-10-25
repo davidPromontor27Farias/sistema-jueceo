@@ -16,16 +16,22 @@ export function siguientePotenciaDe2(n: number): number {
     return potencia;
 }
 
-// La potencia de 2 más GRANDE de `opciones` que no exceda `n`. Se usa para el
-// corte automático de la fase de Preselección (Top 16 / Top 32 estilo Red
-// Bull BC One): nunca corta a más gente de la que realmente se anotó y
-// calificó. Devuelve null si ni la opción más chica cabe (ej. n=3 con
-// opciones [4,8,16,32,64]) — en ese caso no aplica preselección, se usa el
+// Tamaño del Top Bracket automático de la fase de Preselección, por rangos
+// fijos del total de competidores calificados (no la potencia de 2 más
+// grande que quepa — un Top Bracket de 16 para 21+ competidores es mucho más
+// manejable en escenario que, por ejemplo, 32). Devuelve null si ni el rango
+// más chico (3 a 7) alcanza — en ese caso no aplica preselección, se usa el
 // sorteo directo (generar-bracket) para esa categoría.
-export function potenciaDe2MasGrandeQueNoExceda(n: number, opciones: number[]): number | null {
-    const validas = opciones.filter((o) => o <= n);
-    if (validas.length === 0) return null;
-    return Math.max(...validas);
+//   21 en adelante -> 16
+//   13 a 20        -> 8
+//   8 a 12         -> 4
+//   3 a 7          -> 2
+export function tamanoTopBracketPreseleccion(n: number): number | null {
+    if (n >= 21) return 16;
+    if (n >= 13) return 8;
+    if (n >= 8) return 4;
+    if (n >= 3) return 2;
+    return null;
 }
 
 // Orden de siembra estándar de torneo (1 vs size, 2 vs size-1, ... para la

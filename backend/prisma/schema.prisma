@@ -113,7 +113,6 @@ model Escenario {
   updatedAt DateTime @updatedAt
 
   jueces       AdminUser[]
-  turnos       TurnoPreseleccionEscenario[]
   competidores Registration[]
 
   @@map("escenarios")
@@ -202,41 +201,6 @@ model EstadoCategoria {
   updatedAt   DateTime            @updatedAt
 
   @@map("estado_categorias")
-}
-
-// Turno actual de la fase de Preselección, uno por cada combinación de
-// categoría+escenario activo en ella (reemplaza el turno único que existía
-// antes de la Preselección Paralela Multiescenario): qué participante está
-// en tarima ahora mismo EN ESE ESCENARIO, compartido entre /pantalla?escenario=
-// (nombre+foto, sin cronómetro, ver frontend/src/app/pantalla/SecuenciaPreseleccion.tsx)
-// y admin/jueceo (a quién debe calificar un juez de ese escenario). Se crea
-// al iniciar la Preselección de la categoría (ver
-// POST /categorias/:categoria/preseleccion/iniciar, que también sube
-// automáticamente al primer competidor de cada escenario) y se resetea
-// (turnoActualId a null) para los competidores empatados al entrar a
-// REPECHAJE_DESEMPATE. El avance al siguiente competidor es siempre
-// automático (ver avanzarTurnoPreseleccion en backend/src/routes/competencia.ts)
-// — no hay ningún botón manual para esto.
-model TurnoPreseleccionEscenario {
-  id          String    @id @default(uuid())
-  categoria   Categoria
-  escenarioId String
-  escenario   Escenario @relation(fields: [escenarioId], references: [id])
-
-  turnoActualId   String?
-  turnoActual     Registration? @relation(fields: [turnoActualId], references: [id])
-  turnoIniciadoEn DateTime?
-  // Momento en que el staff cortó la rutina del competidor en tarima (botón
-  // "Cortar rutina" en Admin > Competencia) — sin esto en null, ningún juez
-  // puede calificar: no hay cronómetro en Preselección, así que el cierre de
-  // la presentación lo decide el staff a mano, no un tiempo fijo. Se resetea
-  // a null cada vez que sube un competidor nuevo (ver avanzarTurnoPreseleccion
-  // en backend/src/routes/competencia.ts).
-  turnoCortadoEn    DateTime?
-  updatedAt         DateTime  @updatedAt
-
-  @@unique([categoria, escenarioId])
-  @@map("turnos_preseleccion_escenario")
 }
 
 enum EstatusEnfrentamiento {
@@ -506,7 +470,6 @@ model Registration {
   enfrentamientosGanados     Enfrentamiento[] @relation("EnfrentamientoGanador")
   eventosAcceso              AccesoEvento[]
   puntuacionesPreseleccion   PuntuacionPreseleccion[]
-  turnosPreseleccionComoActual TurnoPreseleccionEscenario[]
 
   @@unique([correo, esPrueba])
   @@index([estatusPago])
