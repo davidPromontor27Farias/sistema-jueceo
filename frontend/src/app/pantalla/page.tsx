@@ -3,28 +3,19 @@
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Image from "next/image";
-import { CATEGORIAS, type Categoria } from "@/config/catalog";
+import { CATEGORIAS } from "@/config/catalog";
 import {
     getCategoriasEstado,
     getEnfrentamientos,
-    getEscenariosDeCategoria,
     getPantallaEstado,
     getResultadosPreseleccion,
-    getTurnoPreseleccionActual,
     type Enfrentamiento,
     type EstatusCompetencia,
     type PantallaEstado,
     type ResultadoPreseleccionItem,
-    type TurnoPreseleccion,
 } from "@/lib/adminApi";
 import { SecuenciaOverlay, useSecuenciaBatalla } from "./SecuenciaBatalla";
-import {
-    RecapPreseleccionOverlay,
-    SecuenciaPreseleccionMultiOverlay,
-    SecuenciaPreseleccionOverlay,
-    useRecapPreseleccion,
-    useSecuenciaPreseleccion,
-} from "./SecuenciaPreseleccion";
+import { RecapPreseleccionOverlay, TableroPreseleccion, useRecapPreseleccion } from "./SecuenciaPreseleccion";
 import { BracketMirror } from "./BracketMirror";
 import { ModoPruebaBadge } from "./ModoPruebaBadge";
 
@@ -43,40 +34,6 @@ export default function PantallaPublicaPage() {
     );
 }
 
-// Escenario efectivo para la fase de Preselección/Repechaje: si viene
-// ?escenario= en la URL (pantalla física de UN escenario), se usa ese. Sin
-// el param, se intenta auto-elegir SOLO si la categoría tiene exactamente un
-// escenario activo (el caso de siempre, sin multiescenario) — con más de uno
-// activos y sin param no hay un "turno único" que mostrar en esta pantalla
-// general, así que se deja sin overlay de Preselección (cae al resto de
-// vistas normales) hasta que el staff especifique cuál escenario mostrar.
-function useEscenarioEfectivo(categoria: Categoria | null | undefined): string | null {
-    const searchParams = useSearchParams();
-    const escenarioParam = searchParams.get("escenario");
-    const [escenarioAuto, setEscenarioAuto] = useState<string | null>(null);
-
-    useEffect(() => {
-        if (escenarioParam || !categoria) {
-            setEscenarioAuto(null);
-            return;
-        }
-        let cancelado = false;
-        getEscenariosDeCategoria(categoria).then((resultado) => {
-            if (cancelado) return;
-            if (resultado.ok && resultado.data.escenarios.length === 1) {
-                setEscenarioAuto(resultado.data.escenarios[0]!.id);
-            } else {
-                setEscenarioAuto(null);
-            }
-        });
-        return () => {
-            cancelado = true;
-        };
-    }, [categoria, escenarioParam]);
-
-    return escenarioParam ?? escenarioAuto;
-}
-
 function PantallaPublicaContenido() {
     const searchParams = useSearchParams();
     const escenarioParam = searchParams.get("escenario");
@@ -84,15 +41,8 @@ function PantallaPublicaContenido() {
     const [estado, setEstado] = useState<PantallaEstado | null>(null);
     const [enfrentamientos, setEnfrentamientos] = useState<Enfrentamiento[]>([]);
     const [todosLosEnfrentamientos, setTodosLosEnfrentamientos] = useState<Enfrentamiento[]>([]);
-    const [turnoPreseleccion, setTurnoPreseleccion] = useState<TurnoPreseleccion>(null);
-    const [hayPendientesEscenario, setHayPendientesEscenario] = useState(false);
     const [resultadosPreseleccion, setResultadosPreseleccion] = useState<ResultadoPreseleccionItem[]>([]);
-    const [escenariosCategoria, setEscenariosCategoria] = useState<{ id: string; nombre: string }[]>([]);
-    const [turnosPorEscenario, setTurnosPorEscenario] = useState<
-        Record<string, { turno: TurnoPreseleccion; hayPendientes: boolean }>
-    >({});
     const [estatusPorCategoria, setEstatusPorCategoria] = useState<Record<string, EstatusCompetencia>>({});
-    const escenarioId = useEscenarioEfectivo(estado?.categoriaEnfocada);
 
     useEffect(() => {
         let cancelado = false;
@@ -153,80 +103,10 @@ function PantallaPublicaContenido() {
         };
     }, [estado?.categoriaEnfocada]);
 
-    // Igual que el poll de enfrentamientos: corre sin importar la vista
-    // elegida, porque useSecuenciaPreseleccion debe poder arrancar el overlay
-    // de "Le toca a..." + cronómetro en cuanto el staff avance el turno,
-    // aunque la pantalla esté mostrando otra cosa (o esté APAGADA).
-    useEffect(() => {
-        if (!estado?.categoriaEnfocada || !escenarioId) {
-            setTurnoPreseleccion(null);
-            setHayPendientesEscenario(false);
-            return;
-        }
-
-        const categoria = estado.categoriaEnfocada;
-        let cancelado = false;
-        const poll = async () => {
-            const resultado = await getTurnoPreseleccionActual(categoria, escenarioId);
-            if (!cancelado && resultado.ok) {
-                setTurnoPreseleccion(resultado.data.turno);
-                setHayPendientesEscenario(resultado.data.hayPendientes);
-            }
-        };
-        poll();
-        const id = setInterval(poll, INTERVALO_MS);
-        return () => {
-            cancelado = true;
-            clearInterval(id);
-        };
-    }, [estado?.categoriaEnfocada, escenarioId]);
-
-    // Pantalla general (sin ?escenario=): a diferencia del poll de arriba
-    // (que sigue a UN escenario puntual), acá se sigue a TODOS los
-    // escenarios activos de la categoría enfocada a la vez, para la pantalla
-    // dividida en columnas (ver SecuenciaPreseleccionMultiOverlay más abajo)
-    // — cada escenario avanza a su propio ritmo, así que hace falta su
-    // propio turno-actual por separado, no uno solo.
-    useEffect(() => {
-        if (!estado?.categoriaEnfocada || escenarioParam) {
-            setEscenariosCategoria([]);
-            setTurnosPorEscenario({});
-            return;
-        }
-
-        const categoria = estado.categoriaEnfocada;
-        let cancelado = false;
-        const poll = async () => {
-            const resEscenarios = await getEscenariosDeCategoria(categoria);
-            if (cancelado || !resEscenarios.ok) return;
-            const escenarios = resEscenarios.data.escenarios;
-            setEscenariosCategoria(escenarios);
-
-            const turnos = await Promise.all(
-                escenarios.map(async (esc) => {
-                    const resTurno = await getTurnoPreseleccionActual(categoria, esc.id);
-                    return [
-                        esc.id,
-                        resTurno.ok
-                            ? { turno: resTurno.data.turno, hayPendientes: resTurno.data.hayPendientes }
-                            : { turno: null, hayPendientes: false },
-                    ] as const;
-                }),
-            );
-            if (cancelado) return;
-            setTurnosPorEscenario(Object.fromEntries(turnos));
-        };
-        poll();
-        const id = setInterval(poll, INTERVALO_MS);
-        return () => {
-            cancelado = true;
-            clearInterval(id);
-        };
-    }, [estado?.categoriaEnfocada, escenarioParam]);
-
-    // Ranking completo de Preselección (para el recorrido de resultados una
-    // vez que se acaba la fila de turnos, ver useRecapPreseleccion) — mismo
-    // criterio que el poll de turno-actual: corre sin importar la vista.
+    // Ranking de Preselección: corre sin importar la vista elegida (incluso
+    // con la pantalla APAGADA), tanto para el tablero por escenario
+    // (TableroPreseleccion) como para el recorrido de resultados al terminar
+    // (useRecapPreseleccion).
     useEffect(() => {
         if (!estado?.categoriaEnfocada) {
             return;
@@ -267,38 +147,16 @@ function PantallaPublicaContenido() {
     }, [estado?.vista]);
 
     const secuencia = useSecuenciaBatalla(enfrentamientos);
-    // Solo se usa de verdad en modo ?escenario= (pantalla fija a un
-    // escenario); en modo general va alimentada con turnoPreseleccion=null y
-    // hayPendientesEscenario=false (el poll de arriba los deja así cuando
-    // hay escenarioParam), así que su fase siempre es "normal" y no estorba.
-    const secuenciaPreseleccion = useSecuenciaPreseleccion(turnoPreseleccion, hayPendientesEscenario);
 
-    // Pantalla dividida: los escenarios que tienen a alguien en tarima O
-    // siguen esperando a que el staff presione "Iniciar turno" (quedan
-    // pendientes) entran al grid — solo cuando un escenario de verdad
-    // terminó su fila (sin turno y sin pendientes) su columna desaparece del
-    // siguiente poll (ver SecuenciaPreseleccionMultiOverlay).
-    const entradasActivas = escenariosCategoria
-        .map((esc) => {
-            const info = turnosPorEscenario[esc.id] ?? { turno: null, hayPendientes: false };
-            return { escenarioId: esc.id, escenarioNombre: esc.nombre, turno: info.turno, hayPendientes: info.hayPendientes };
-        })
-        .filter((e) => e.turno !== null || e.hayPendientes);
-
-    const hayTurnoActivo = escenarioParam ? !!turnoPreseleccion || hayPendientesEscenario : entradasActivas.length > 0;
-    // El recorrido de resultados solo es elegible mientras la categoría
-    // sigue en Preselección/Repechaje — una vez que pasa a bracket o
-    // finaliza, dejar de ofrecerlo evita que una recarga de /pantalla lo
-    // reproduzca de nuevo por encima de Brackets/Ganadores (ver el poll de
-    // estatusPorCategoria arriba).
+    // El tablero de Preselección (y el recorrido de resultados de abajo)
+    // solo son elegibles mientras la categoría sigue en Preselección/
+    // Repechaje — una vez que pasa a bracket o finaliza, dejar de
+    // ofrecerlos evita que una recarga de /pantalla los reproduzca de nuevo
+    // por encima de Brackets/Ganadores (ver el poll de estatusPorCategoria
+    // arriba).
     const estatusCategoriaEnfocada = estado?.categoriaEnfocada ? estatusPorCategoria[estado.categoriaEnfocada] : undefined;
     const permitirRecap = estatusCategoriaEnfocada === "PRESELECCION" || estatusCategoriaEnfocada === "REPECHAJE_DESEMPATE";
-    const recapPreseleccion = useRecapPreseleccion(
-        estado?.categoriaEnfocada ?? null,
-        hayTurnoActivo,
-        permitirRecap,
-        resultadosPreseleccion,
-    );
+    const recapPreseleccion = useRecapPreseleccion(estado?.categoriaEnfocada ?? null, permitirRecap, resultadosPreseleccion);
 
     // En la práctica nunca se solapan (una categoría está en un solo estatus
     // a la vez: PRESELECCION o EN_CURSO), pero por robustez la secuencia de
@@ -319,29 +177,18 @@ function PantallaPublicaContenido() {
         );
     }
 
-    // Modo pantalla-de-un-escenario (?escenario=<id>): pantalla completa fija
-    // a ese único turno (o a "esperando" mientras no hay nadie en tarima
-    // pero quedan pendientes).
-    if (escenarioParam && secuenciaPreseleccion.fase !== "normal" && estado?.categoriaEnfocada) {
+    // Tablero de Preselección: con ?escenario=<id> (pantalla física de un
+    // escenario) muestra solo esa columna; sin el param, una columna por
+    // cada escenario con competidores en esta categoría.
+    if (permitirRecap && estado?.categoriaEnfocada && resultadosPreseleccion.length > 0) {
         return (
             <>
                 <ModoPruebaBadge />
-                <SecuenciaPreseleccionOverlay
-                    fase={secuenciaPreseleccion.fase}
-                    turno={secuenciaPreseleccion.turno}
+                <TableroPreseleccion
                     categoria={estado.categoriaEnfocada}
+                    resultados={resultadosPreseleccion}
+                    escenarioId={escenarioParam}
                 />
-            </>
-        );
-    }
-
-    // Pantalla general: dividida en 1/2/3 columnas según cuántos escenarios
-    // tengan turno activo ahora mismo.
-    if (!escenarioParam && entradasActivas.length > 0 && estado?.categoriaEnfocada) {
-        return (
-            <>
-                <ModoPruebaBadge />
-                <SecuenciaPreseleccionMultiOverlay categoria={estado.categoriaEnfocada} entradas={entradasActivas} />
             </>
         );
     }

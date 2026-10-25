@@ -7,10 +7,6 @@ import type { DesglosePuntaje, Enfrentamiento } from "@/lib/adminApi";
 import { BracketMirror } from "./BracketMirror";
 
 const DURACION_ANUNCIO_VS_MS = 5_000;
-// Reusadas también por la secuencia de Preselección (turno individual), ver
-// frontend/src/app/pantalla/SecuenciaPreseleccion.tsx: mismos 8s de
-// presentación y 1 minuto de turno, una sola fuente de verdad para ambos tiempos.
-export const DURACION_PRESENTACION_MS = 8_000;
 export const DURACION_TURNO_MS = 60_000;
 const DURACION_RESULTADOS_MS = 7_000;
 const DURACION_GANADOR_MS = 10_000;
@@ -27,9 +23,7 @@ const RONDAS_CON_CONTEO_SUSPENSO = new Set(["Semifinal", "Final"]);
 type FaseSecuencia =
     | "normal"
     | "anuncio_vs"
-    | "presentando_a"
     | "turno_a"
-    | "presentando_b"
     | "turno_b"
     | "esperando_jueces"
     | "empate"
@@ -55,9 +49,7 @@ function nombreCompetidor(c: Enfrentamiento["competidorA"]): string {
 }
 
 type LimitesVuelta = {
-    finPresentacionA: number;
     finTurnoA: number;
-    finPresentacionB: number;
     finTurnoB: number;
 };
 
@@ -66,8 +58,10 @@ type LimitesVuelta = {
 // filasParaRonda en backend/src/routes/competencia.ts). `enf.iniciadoEn` es
 // la referencia fija de "cuándo arrancó" (a diferencia de updatedAt, que se
 // mueve con cualquier cambio — cortar un turno lo pisaba y desincronizaba
-// todo el cronómetro en vez de acortarlo). Si el SUPER_ADMIN cortó un turno
-// (ver POST /enfrentamientos/:id/cortar-turno), ese corte es UN solo
+// todo el cronómetro en vez de acortarlo). Sin fase de presentación: el
+// turno de A arranca apenas termina el anuncio VS (o el turno B de la
+// vuelta anterior), directo al conteo de 60s. Si el SUPER_ADMIN cortó un
+// turno (ver POST /enfrentamientos/:id/cortar-turno), ese corte es UN solo
 // timestamp absoluto en toda la base de datos (no uno por vuelta): se le
 // asigna a la vuelta cuya ventana SIN cortar lo contiene — así un corte en
 // la vuelta 1 no afecta por accidente el cálculo de la vuelta 2. Limitación
@@ -85,15 +79,12 @@ export function calcularLimites(enf: Enfrentamiento): { finAnuncio: number; vuel
     const vueltas: LimitesVuelta[] = [];
     let cursor = finAnuncio;
     for (let i = 0; i < totalVueltas; i++) {
-        const finPresentacionA = cursor + DURACION_PRESENTACION_MS;
-        const finTurnoAProgramado = finPresentacionA + DURACION_TURNO_MS;
-        const finTurnoA =
-            cortoA !== null && cortoA >= finPresentacionA && cortoA <= finTurnoAProgramado ? cortoA : finTurnoAProgramado;
-        const finPresentacionB = finTurnoA + DURACION_PRESENTACION_MS;
-        const finTurnoBProgramado = finPresentacionB + DURACION_TURNO_MS;
+        const finTurnoAProgramado = cursor + DURACION_TURNO_MS;
+        const finTurnoA = cortoA !== null && cortoA >= cursor && cortoA <= finTurnoAProgramado ? cortoA : finTurnoAProgramado;
+        const finTurnoBProgramado = finTurnoA + DURACION_TURNO_MS;
         const finTurnoB =
-            cortoB !== null && cortoB >= finPresentacionB && cortoB <= finTurnoBProgramado ? cortoB : finTurnoBProgramado;
-        vueltas.push({ finPresentacionA, finTurnoA, finPresentacionB, finTurnoB });
+            cortoB !== null && cortoB >= finTurnoA && cortoB <= finTurnoBProgramado ? cortoB : finTurnoBProgramado;
+        vueltas.push({ finTurnoA, finTurnoB });
         cursor = finTurnoB;
     }
     return { finAnuncio, vueltas };
@@ -102,15 +93,16 @@ export function calcularLimites(enf: Enfrentamiento): { finAnuncio: number; vuel
 // Máquina de estados que reacciona sola al ciclo de vida de la batalla en
 // curso de la categoría enfocada. Desde que el staff pone un enfrentamiento
 // en EN_CURSO ("Iniciar batalla"):
-//   anuncio_vs (5s, "Fulano VS Mengano" juntos) -> [presentando_a (8s) ->
-//   turno_a (1min) -> presentando_b (8s) -> turno_b (1min)] x rondasBaile ->
-//   esperando_jueces (sin límite: los jueces ya pudieron calificar desde que
-//   arrancó la batalla; aquí solo se espera a que TODOS terminen) ->
-//   ganador (10s) -> vuelve a normal. El bloque entre corchetes se repite
-//   rondasBaile veces seguidas SIN pasar por esperando_jueces entre una
-//   vuelta y la siguiente (normal: 1 vez; Final: 2 — ver rondasBaile en
-//   schema.prisma) — los jueces califican una sola vez, sobre el total de
-//   todas las vueltas.
+//   anuncio_vs (5s, "Fulano VS Mengano" juntos) -> [turno_a (1min) ->
+//   turno_b (1min)] x rondasBaile -> esperando_jueces (sin límite: los
+//   jueces ya pudieron calificar desde que arrancó la batalla; aquí solo se
+//   espera a que TODOS terminen) -> ganador (10s) -> vuelve a normal. Sin
+//   fase intermedia de "le toca a": el turno de cada quien arranca directo
+//   al conteo de 60s apenas termina el anuncio VS (o el turno anterior). El
+//   bloque entre corchetes se repite rondasBaile veces seguidas SIN pasar
+//   por esperando_jueces entre una vuelta y la siguiente (normal: 1 vez;
+//   Final: 2 — ver rondasBaile en schema.prisma) — los jueces califican una
+//   sola vez, sobre el total de todas las vueltas.
 // No hace poll propio: usa los mismos `enfrentamientos` que ya está sondeando
 // /pantalla cada 3s.
 export function useSecuenciaBatalla(enfrentamientos: Enfrentamiento[]): EstadoSecuencia {
@@ -222,28 +214,11 @@ export function useSecuenciaBatalla(enfrentamientos: Enfrentamiento[]): EstadoSe
         const totalVueltas = Math.max(1, enf.rondasBaile || 1);
         const siguiente =
             faseTurno === "turno_a"
-                ? () => iniciarPresentando("presentando_b", enf, DURACION_PRESENTACION_MS, vueltaActual)
+                ? () => iniciarTurno("turno_b", enf, DURACION_TURNO_MS, vueltaActual)
                 : vueltaActual < totalVueltas
-                  ? () => iniciarPresentando("presentando_a", enf, DURACION_PRESENTACION_MS, vueltaActual + 1)
+                  ? () => iniciarTurno("turno_a", enf, DURACION_TURNO_MS, vueltaActual + 1)
                   : () => iniciarEsperando(enf);
         timeoutRef.current = setTimeout(siguiente, Math.max(duracionMs, 0));
-    };
-
-    const iniciarPresentando = (
-        faseP: "presentando_a" | "presentando_b",
-        enf: Enfrentamiento,
-        duracionMs: number,
-        vueltaActual: number,
-    ) => {
-        limpiarTimers();
-        setActivo(enf);
-        setFase(faseP);
-        setVuelta(vueltaActual);
-        const siguiente = faseP === "presentando_a" ? "turno_a" : "turno_b";
-        timeoutRef.current = setTimeout(
-            () => iniciarTurno(siguiente, enf, DURACION_TURNO_MS, vueltaActual),
-            Math.max(duracionMs, 0),
-        );
     };
 
     const iniciarAnuncioVs = (enf: Enfrentamiento, duracionMs: number) => {
@@ -251,10 +226,7 @@ export function useSecuenciaBatalla(enfrentamientos: Enfrentamiento[]): EstadoSe
         setActivo(enf);
         setFase("anuncio_vs");
         setVuelta(1);
-        timeoutRef.current = setTimeout(
-            () => iniciarPresentando("presentando_a", enf, DURACION_PRESENTACION_MS, 1),
-            Math.max(duracionMs, 0),
-        );
+        timeoutRef.current = setTimeout(() => iniciarTurno("turno_a", enf, DURACION_TURNO_MS, 1), Math.max(duracionMs, 0));
     };
 
     // Empate: el backend ya incrementó numeroDesempate y dejó la batalla
@@ -299,16 +271,8 @@ export function useSecuenciaBatalla(enfrentamientos: Enfrentamiento[]): EstadoSe
             for (let i = 0; i < vueltas.length; i++) {
                 const v = vueltas[i]!;
                 const numeroVuelta = i + 1;
-                if (transcurrido < v.finPresentacionA) {
-                    iniciarPresentando("presentando_a", enCurso, v.finPresentacionA - transcurrido, numeroVuelta);
-                    return;
-                }
                 if (transcurrido < v.finTurnoA) {
                     iniciarTurno("turno_a", enCurso, v.finTurnoA - transcurrido, numeroVuelta);
-                    return;
-                }
-                if (transcurrido < v.finPresentacionB) {
-                    iniciarPresentando("presentando_b", enCurso, v.finPresentacionB - transcurrido, numeroVuelta);
                     return;
                 }
                 if (transcurrido < v.finTurnoB) {
@@ -391,9 +355,9 @@ export function useSecuenciaBatalla(enfrentamientos: Enfrentamiento[]): EstadoSe
         Promise.resolve().then(() => {
             const totalVueltas = Math.max(1, actualizado.rondasBaile || 1);
             if (fase === "turno_a") {
-                iniciarPresentando("presentando_b", actualizado, DURACION_PRESENTACION_MS, vuelta);
+                iniciarTurno("turno_b", actualizado, DURACION_TURNO_MS, vuelta);
             } else if (vuelta < totalVueltas) {
-                iniciarPresentando("presentando_a", actualizado, DURACION_PRESENTACION_MS, vuelta + 1);
+                iniciarTurno("turno_a", actualizado, DURACION_TURNO_MS, vuelta + 1);
             } else {
                 iniciarEsperando(actualizado);
             }
@@ -407,9 +371,8 @@ export function useSecuenciaBatalla(enfrentamientos: Enfrentamiento[]): EstadoSe
     // importar en qué vuelta/lado esté — es la señal autoritativa de que ya
     // se acabó de bailar, por encima de cualquier cálculo de tiempo.
     useEffect(() => {
-        const enPresentacionOTurno =
-            fase === "presentando_a" || fase === "turno_a" || fase === "presentando_b" || fase === "turno_b";
-        if (!enPresentacionOTurno || !activo) return;
+        const enTurno = fase === "turno_a" || fase === "turno_b";
+        if (!enTurno || !activo) return;
         const actualizado = enfrentamientos.find((e) => e.id === activo.id);
         if (!actualizado || activo.bailesFinalizadosEn || !actualizado.bailesFinalizadosEn) return;
 
@@ -420,6 +383,53 @@ export function useSecuenciaBatalla(enfrentamientos: Enfrentamiento[]): EstadoSe
     useEffect(() => limpiarTimers, []);
 
     return { fase, enfrentamiento: activo, segundosRestantes, vuelta, totalVueltas: Math.max(1, activo?.rondasBaile || 1) };
+}
+
+// "34" -> "00:34" (minutos:segundos), como en el diseño de referencia de
+// Open Style — DURACION_TURNO_MS son 60s de costumbre, pero esto igual
+// soporta turnos más largos sin desbordar el formato.
+function formatoMmSs(totalSegundos: number): string {
+    const segs = Math.max(0, totalSegundos);
+    const minutos = Math.floor(segs / 60);
+    const segundos = segs % 60;
+    return `${String(minutos).padStart(2, "0")}:${String(segundos).padStart(2, "0")}`;
+}
+
+// Acentos angulares rojos en las esquinas (ver diseño de referencia de Open
+// Style): puramente decorativos, detrás del contenido, con clip-path en vez
+// de imágenes para no depender de un asset adicional.
+function AcentosEsquina() {
+    const base = "absolute h-64 w-64 bg-boss-red/20";
+    return (
+        <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden>
+            <div className={`${base} -left-16 -top-24 rotate-[18deg]`} style={{ clipPath: "polygon(0 0, 100% 15%, 35% 100%)" }} />
+            <div className={`${base} -bottom-24 -left-10 -rotate-[24deg]`} style={{ clipPath: "polygon(0 0, 100% 10%, 40% 100%)" }} />
+            <div className={`${base} -right-16 -top-20 rotate-[160deg]`} style={{ clipPath: "polygon(0 0, 100% 15%, 35% 100%)" }} />
+            <div className={`${base} -bottom-28 -right-10 rotate-[135deg]`} style={{ clipPath: "polygon(0 0, 100% 10%, 40% 100%)" }} />
+        </div>
+    );
+}
+
+// Foto enmarcada con borde y resplandor del color del lado (azul/rojo), sin
+// el degradado a negro de FotoCompetidorVs — ese degradado es para la foto
+// "flotando" sobre el fondo a pantalla completa; aquí la foto vive dentro de
+// un marco propio, como en el diseño de referencia.
+function FotoCompetidorEncuadrada({ competidor, color }: { competidor: Enfrentamiento["competidorA"]; color: string }) {
+    const nombre = nombreCompetidor(competidor);
+    return (
+        <div
+            className="relative aspect-[4/5] w-[min(34vw,24rem)] shrink-0 overflow-hidden rounded-sm border-4 bg-boss-panel"
+            style={{ borderColor: color, boxShadow: `0 0 24px ${color}, 0 0 64px ${color}` }}
+        >
+            {competidor?.fotoUrl ? (
+                <Image src={competidor.fotoUrl} alt={nombre} fill unoptimized className="object-cover" />
+            ) : (
+                <div className="flex h-full w-full items-center justify-center font-display text-6xl text-white">
+                    {inicialesDe(nombre)}
+                </div>
+            )}
+        </div>
+    );
 }
 
 export function inicialesDe(nombre: string): string {
@@ -468,29 +478,57 @@ export function ChispasFondo() {
     );
 }
 
-// Marco neón angular (dos segmentos que forman una punta hacia el centro),
-// dibujado una sola vez y reflejado con scaleX(-1) para el lado derecho.
-function MarcoNeon({ color, espejo = false }: { color: string; espejo?: boolean }) {
+// Silueta genérica de persona, para el marco de un competidor sin foto (ver
+// FotoConBanner) — mismo recurso visual que el "FOTO NO DISPONIBLE" del
+// diseño de referencia.
+function SiluetaPersona({ className }: { className?: string }) {
     return (
-        <svg
-            viewBox="0 0 400 800"
-            preserveAspectRatio="none"
-            className="absolute inset-0 z-0 h-full w-full"
-            style={espejo ? { transform: "scaleX(-1)" } : undefined}
-            aria-hidden
-        >
-            <polyline
-                points="60,50 260,400 90,750"
-                fill="none"
-                stroke={color}
-                strokeWidth="14"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className="animate-neon-pulso"
-                style={{ filter: `drop-shadow(0 0 6px ${color}) drop-shadow(0 0 22px ${color})` }}
-            />
-            <circle cx="260" cy="400" r="7" fill="#ffffff" style={{ filter: `drop-shadow(0 0 10px ${color})` }} />
+        <svg viewBox="0 0 100 100" className={className} fill="currentColor" aria-hidden>
+            <circle cx="50" cy="34" r="20" />
+            <path d="M50 58c-25 0-40 15-40 34v6h80v-6c0-19-15-34-40-34z" />
         </svg>
+    );
+}
+
+// Marco cuadrado con resplandor del color del lado (azul A / rojo B) y el
+// nombre en una franja oscura sobrepuesta al pie de la foto — ver diseño de
+// referencia de Open Style. Sin foto, cae a una silueta + "Foto no
+// disponible" en vez de las iniciales (que sí se usan en el resto del panel
+// admin): acá el marco es grande y una silueta se lee mejor que una o dos
+// letras sueltas.
+function FotoConBanner({ competidor, color }: { competidor: Enfrentamiento["competidorA"]; color: string }) {
+    const nombre = nombreCompetidor(competidor);
+    return (
+        <div
+            // Tamaño atado al alto disponible (no al ancho): con el header +
+            // pie de fase + los dos marcos + "VS" compartiendo una sola
+            // pantalla sin scroll, basarlo en el ancho desbordaba hacia abajo
+            // en viewports bajos (el bug que reportó el cliente).
+            className="relative aspect-square h-[min(54vh,32rem)] w-auto shrink-0 overflow-hidden rounded-sm border-4 bg-boss-panel"
+            style={{ borderColor: color, boxShadow: `0 0 20px ${color}, 0 0 50px ${color}` }}
+        >
+            {competidor?.fotoUrl ? (
+                <Image src={competidor.fotoUrl} alt={nombre} fill unoptimized className="object-cover" />
+            ) : (
+                <div
+                    className="flex h-full w-full flex-col items-center justify-center gap-2 pb-[18%]"
+                    style={{ backgroundColor: `color-mix(in srgb, ${color} 20%, black)` }}
+                >
+                    <SiluetaPersona className="h-[45%] w-auto text-black/60" />
+                    <span className="font-display text-xs uppercase tracking-widest text-white/70 sm:text-sm">
+                        Foto no disponible
+                    </span>
+                </div>
+            )}
+            <div className="absolute inset-x-0 bottom-0 bg-black/75 px-3 py-2 sm:px-5 sm:py-3">
+                <p
+                    className="w-full text-center font-display uppercase leading-tight text-white"
+                    style={{ fontSize: "clamp(1rem, 2.6vw, 1.875rem)", overflowWrap: "break-word" }}
+                >
+                    {nombre}
+                </p>
+            </div>
+        </div>
     );
 }
 
@@ -502,16 +540,22 @@ const DEGRADADO_FOTO = "linear-gradient(to bottom, black 55%, transparent 100%)"
 export function FotoCompetidorVs({
     competidor,
     grande = false,
+    anchoClase,
 }: {
     competidor: Enfrentamiento["competidorA"];
     grande?: boolean;
+    // Override del ancho/alto por defecto de `grande` — lo usa la pantalla de
+    // "ganador" para una foto más grande que la del recorrido de resultados
+    // de Preselección (RecapPreseleccionOverlay), que sigue con el tamaño de
+    // siempre.
+    anchoClase?: string;
 }) {
     const nombre = nombreCompetidor(competidor);
     // Ancho atado al alto real del viewport (no al ancho ni a breakpoints
     // fijos), con el alto derivado por aspect-ratio: así la foto se achica
     // sola en pantallas con menos alto disponible y nunca empuja el nombre
     // fuera de la vista (el bug que reportó el cliente).
-    const tamanoClase = grande ? "w-[min(30vh,18rem)] aspect-[4/5]" : "w-[min(20vh,11rem)] aspect-[4/5]";
+    const tamanoClase = anchoClase ?? (grande ? "w-[min(30vh,18rem)] aspect-[4/5]" : "w-[min(20vh,11rem)] aspect-[4/5]");
     return (
         <div
             className={`relative z-10 shrink-0 overflow-hidden bg-boss-panel ${tamanoClase}`}
@@ -535,51 +579,111 @@ export function FotoCompetidorVs({
     );
 }
 
-// Pantalla de dos lados (azul A / rojo B) con marcos neón, fotos y nombres —
-// la reutilizan el anuncio inicial ("VS"), la espera de calificación
-// ("CALIFICANDO") y los resultados (desglose de puntajes debajo de cada
-// nombre), que solo cambian qué va en el centro y debajo de cada nombre.
+// Pantalla de dos lados (azul A / rojo B) con marcos cuadrados, nombre
+// sobrepuesto al pie de cada foto y un "VS" fijo al centro — la reutilizan el
+// anuncio inicial, la espera de calificación, el conteo de suspenso, el aviso
+// de empate y los resultados (desglose de puntajes debajo de cada marco); lo
+// único que cambia entre fases es el texto del pie (`centro`, ahora debajo de
+// los marcos en vez de encimado) y si el "VS" lleva el destello de impacto
+// (`vsDestacado`, solo en el anuncio inicial).
 function PanelVersus({
+
     enfrentamiento,
     centro,
     debajoA,
     debajoB,
+    vsDestacado = false,
+
 }: {
+
     enfrentamiento: Enfrentamiento;
-    centro: ReactNode;
+    centro?: ReactNode;
     debajoA?: ReactNode;
     debajoB?: ReactNode;
+    vsDestacado?: boolean;
+
 }) {
     return (
-        <div className="absolute inset-0">
-            <div className="fondo-vs-azul absolute inset-0" />
-            <div className="fondo-vs-rojo absolute inset-0" />
+        <div className="absolute inset-0 flex flex-col overflow-hidden bg-boss-black">
+            <AcentosEsquina />
+            {/* Encabezado: logo grande + categoría/ronda grandes. */}
+            <div className="relative z-10 flex shrink-0 items-center justify-between gap-6 px-8 pt-8 sm:px-16 sm:pt-10">
+                <Image
+                    src="/thebosslogo.jpeg"
+                    alt="THE BOSS — Breaking Battles"
+                    width={220}
+                    height={180}
+                    priority
+                    className="h-auto w-28 shrink-0 rounded-md sm:w-44"
+                />
 
-            <ChispasFondo />
+                <div className="min-w-0 text-right">
 
-            <div className="absolute inset-0 flex">
-                <div className="animate-anuncio-izq-fuego relative flex flex-1 flex-col items-center justify-center gap-3">
-                    <MarcoNeon color="var(--color-boss-blue)" />
-                    <FotoCompetidorVs competidor={enfrentamiento.competidorA} />
-                    <p className="relative z-10 max-w-[85%] truncate font-display text-2xl uppercase text-white [text-shadow:0_0_16px_var(--color-boss-blue)] sm:text-4xl">
-                        {nombreCompetidor(enfrentamiento.competidorA)}
+                    {/* pr-*: el itálico (sintético, Anton no tiene variante itálica
+                        real) dibuja tinta más allá del ancho lógico del texto en el
+                        último carácter — sin este colchón, truncate lo recortaba justo
+                        en el borde de la pantalla (se veía cortado aunque el texto
+                        cupiera entero). */}
+                    <p className="truncate font-display text-2xl uppercase italic leading-none text-white sm:text-5xl pr-1 sm:pr-2">
+                        {CATEGORIAS[enfrentamiento.categoria]}
                     </p>
-                    {debajoA}
-                </div>
-                <div className="animate-anuncio-der-fuego relative flex flex-1 flex-col items-center justify-center gap-3">
-                    <MarcoNeon color="var(--color-boss-red)" espejo />
-                    <FotoCompetidorVs competidor={enfrentamiento.competidorB} />
-                    <p className="relative z-10 max-w-[85%] truncate font-display text-2xl uppercase text-white [text-shadow:0_0_16px_var(--color-boss-red)] sm:text-4xl">
-                        {nombreCompetidor(enfrentamiento.competidorB)}
+                    <p
+                        className="mt-1 truncate font-display text-3xl uppercase italic leading-none text-white sm:text-6xl pr-1 sm:pr-3"
+                        style={{ textShadow: "0 0 18px var(--color-boss-red), 0 0 40px var(--color-boss-red)" }}
+                    >
+                        {enfrentamiento.ronda}
                     </p>
-                    {debajoB}
                 </div>
             </div>
 
-            <div className="pointer-events-none absolute inset-0 flex items-center justify-center">{centro}</div>
+            {/* Cuerpo: marco de A, "VS", marco de B. */}
+
+            <div className="relative z-10 flex min-h-0 flex-1 items-center justify-center gap-4 px-6 py-6 sm:gap-10 sm:px-14">
+                <div className="flex min-w-0 flex-1 flex-col items-center gap-3">
+                    <FotoConBanner competidor={enfrentamiento.competidorA} color="var(--color-boss-blue)" />
+                    {debajoA}
+                </div>
+                <div className="relative shrink-0 px-1 sm:px-3">
+                    {vsDestacado && (
+                        <span className="animate-vs-destello absolute inset-0 m-auto h-20 w-20 rounded-full bg-white/70 blur-2xl sm:h-32 sm:w-32" />
+                    )}
+                    <span
+                        className={`relative font-display text-4xl italic text-white sm:text-7xl ${vsDestacado ? "animate-impacto-fuego" : ""}`}
+                        style={{
+                            WebkitTextStroke: "3px var(--color-boss-red)",
+                            textShadow: "0 4px 0 rgba(0,0,0,0.5), 0 0 24px var(--color-boss-red)",
+                        }}
+                    >
+
+                        VS
+                    </span>
+
+                </div>
+                <div className="flex min-w-0 flex-1 flex-col items-center gap-3">
+                    <FotoConBanner competidor={enfrentamiento.competidorB} color="var(--color-boss-red)" />
+                    {debajoB}
+                </div>
+
+            </div>
+            {/* Pie: mensaje de la fase (Calificando, Resultados, Empate...). */}
+            {centro && (
+                <>
+
+                    <div className="relative z-10 flex shrink-0 items-center justify-center px-8 py-6 text-center sm:py-8">
+
+                        {centro}
+
+                    </div>
+
+                </>
+
+            )}
+
         </div>
+
     );
-}
+
+} 
 
 // Las 5 secciones del reglamento (Art. 35), en el mismo orden y con el mismo
 // nombre que ya se usa en /admin/jueceo para calificar (nombre completo, no
@@ -646,7 +750,7 @@ export function SecuenciaOverlay({
 }) {
     if (fase === "normal" || !enfrentamiento) return null;
 
-    const esTurnoDeA = fase === "presentando_a" || fase === "turno_a";
+    const esTurnoDeA = fase === "turno_a";
     const competidorEnTurno = esTurnoDeA ? enfrentamiento.competidorA : enfrentamiento.competidorB;
 
     // nombreRonda() (backend) siempre le pone "Final" a la última ronda de una
@@ -655,20 +759,36 @@ export function SecuenciaOverlay({
     const esCampeonDeCategoria = enfrentamiento.ronda === "Final";
     const hayPuntajes = enfrentamiento.puntajeA != null && enfrentamiento.puntajeB != null;
     const ganoA = enfrentamiento.ganador?.id === enfrentamiento.competidorA?.id;
-    // Solo tiene sentido mostrarla durante las fases de presentación/turno —
-    // "esperando"/"resultados"/"ganador" ya terminaron todas las vueltas.
-    const mostrarVuelta =
-        totalVueltas > 1 && (fase === "presentando_a" || fase === "turno_a" || fase === "presentando_b" || fase === "turno_b");
+    // Solo tiene sentido mostrarla durante el turno de A/B — "esperando"/
+    // "resultados"/"ganador" ya terminaron todas las vueltas.
+    const mostrarVuelta = totalVueltas > 1 && (fase === "turno_a" || fase === "turno_b");
+
+    const enTurno = fase === "turno_a" || fase === "turno_b";
+    // Tanto el turno de A/B como PanelVersus (empate, anuncio_vs,
+    // esperando_jueces, conteo, resultados) y la pantalla de "ganador" ya
+    // traen su propio encabezado grande (logo + categoría + ronda, ver
+    // diseño de referencia), así que no se duplica acá arriba el renglón
+    // genérico chico — solo lo necesita "bracket".
+    const tieneEncabezadoPropio =
+        enTurno ||
+        fase === "empate" ||
+        fase === "anuncio_vs" ||
+        fase === "esperando_jueces" ||
+        fase === "conteo" ||
+        fase === "ganador" ||
+        (fase === "resultados" && hayPuntajes);
 
     return (
         <main className="fixed inset-0 z-50 flex flex-col items-center justify-center overflow-hidden bg-boss-black px-8 text-center">
-            <p className="absolute inset-x-0 top-10 z-10 font-display text-lg uppercase tracking-widest text-boss-gray">
-                {CATEGORIAS[enfrentamiento.categoria]} · {enfrentamiento.ronda}
-                {mostrarVuelta && <span className="text-white"> · Ronda {vuelta} de {totalVueltas}</span>}
-                {enfrentamiento.numeroDesempate > 0 && (
-                    <span className="text-yellow-400"> · Ronda de desempate {enfrentamiento.numeroDesempate}</span>
-                )}
-            </p>
+            {!tieneEncabezadoPropio && (
+                <p className="absolute inset-x-0 top-10 z-10 font-display text-lg uppercase tracking-widest text-boss-gray">
+                    {CATEGORIAS[enfrentamiento.categoria]} · {enfrentamiento.ronda}
+                    {mostrarVuelta && <span className="text-white"> · Ronda {vuelta} de {totalVueltas}</span>}
+                    {enfrentamiento.numeroDesempate > 0 && (
+                        <span className="text-yellow-400"> · Ronda de desempate {enfrentamiento.numeroDesempate}</span>
+                    )}
+                </p>
+            )}
 
             {fase === "empate" && (
                 <PanelVersus
@@ -683,60 +803,112 @@ export function SecuenciaOverlay({
                             </span>
                         </div>
                     }
+                    debajoA={<PuntajeTotalCompetidor puntaje={enfrentamiento.puntajeEmpateA ?? 0} color="var(--color-boss-blue)" />}
+                    debajoB={<PuntajeTotalCompetidor puntaje={enfrentamiento.puntajeEmpateB ?? 0} color="var(--color-boss-red)" />}
                 />
             )}
 
-            {fase === "anuncio_vs" && (
-                <PanelVersus
-                    enfrentamiento={enfrentamiento}
-                    centro={
-                        <>
-                            <span className="animate-vs-destello absolute h-24 w-24 rounded-full bg-white/70 blur-2xl sm:h-40 sm:w-40" />
-                            <span className="animate-impacto-fuego relative font-display text-6xl italic text-white [text-shadow:0_4px_0_rgba(0,0,0,0.5),0_0_24px_rgba(255,255,255,0.9)] sm:text-8xl">
-                                VS
-                            </span>
-                        </>
-                    }
-                />
-            )}
+            {fase === "anuncio_vs" && <PanelVersus enfrentamiento={enfrentamiento} vsDestacado />}
 
-            {(fase === "presentando_a" || fase === "turno_a" || fase === "presentando_b" || fase === "turno_b") && (
+            {enTurno && (
                 <div
-                    key={fase === "presentando_a" || fase === "turno_a" ? "reflector-a" : "reflector-b"}
-                    className="animate-reflector-entrada absolute inset-0"
+                    key={esTurnoDeA ? "reflector-a" : "reflector-b"}
+                    className="animate-reflector-entrada absolute inset-0 flex flex-col overflow-hidden bg-boss-black text-left"
                 >
-                    <div className={`absolute inset-0 ${esTurnoDeA ? "fondo-reflector-azul" : "fondo-reflector-rojo"}`} />
+                    <AcentosEsquina />
 
-                    <div className="relative z-10 flex h-full flex-col items-center justify-center gap-3 pt-10">
-                        {(fase === "presentando_a" || fase === "presentando_b") && (
-                            <p
-                                className="font-display text-xl uppercase tracking-widest sm:text-2xl"
-                                style={{ color: esTurnoDeA ? "var(--color-boss-blue)" : "var(--color-boss-red)" }}
-                            >
-                                Le toca a...
+                    {/* Encabezado: logo grande + categoría/ronda grandes, como en el
+                        diseño de referencia de Open Style. */}
+                    <div className="relative z-10 flex shrink-0 items-center justify-between gap-6 px-8 pt-8 sm:px-16 sm:pt-10">
+                        <Image
+                            src="/thebosslogo.jpeg"
+                            alt="THE BOSS — Breaking Battles"
+                            width={220}
+                            height={180}
+                            priority
+                            className="h-auto w-28 shrink-0 rounded-md sm:w-44"
+                        />
+                        <div className="min-w-0 text-right">
+                            {/* pr-*: ver nota en PanelVersus — el itálico sintético
+                                desborda tinta del lado derecho del último carácter. */}
+                            <p className="truncate font-display text-2xl uppercase italic leading-none text-white sm:text-5xl pr-1 sm:pr-2">
+                                {CATEGORIAS[enfrentamiento.categoria]}
                             </p>
-                        )}
+                            <p
+                                className="mt-1 truncate font-display text-3xl uppercase italic leading-none text-white sm:text-6xl pr-1 sm:pr-3"
+                                style={{
+                                    textShadow: `0 0 18px ${esTurnoDeA ? "var(--color-boss-blue)" : "var(--color-boss-red)"}, 0 0 40px ${
+                                        esTurnoDeA ? "var(--color-boss-blue)" : "var(--color-boss-red)"
+                                    }`,
+                                }}
+                            >
+                                {enfrentamiento.ronda}
+                            </p>
+                        </div>
+                    </div>
 
-                        <FotoCompetidorVs competidor={competidorEnTurno} grande />
+                    <div className="relative z-10 mt-6 h-1 shrink-0 bg-boss-red shadow-[0_0_12px_var(--color-boss-red)] sm:mt-8" />
 
-                        <p className="max-w-[85%] truncate font-display text-3xl uppercase text-white sm:text-5xl">
-                            {nombreCompetidor(competidorEnTurno)}
-                        </p>
+                    {/* Cuerpo: foto enmarcada a la izquierda, info a la derecha. */}
+                    <div className="relative z-10 flex min-h-0 flex-1 items-center gap-8 px-8 py-8 sm:gap-14 sm:px-16">
+                        <FotoCompetidorEncuadrada
+                            competidor={competidorEnTurno}
+                            color={esTurnoDeA ? "var(--color-boss-blue)" : "var(--color-boss-red)"}
+                        />
 
-                        {(fase === "turno_a" || fase === "turno_b") && (
+                        <div className="flex min-w-0 flex-1 flex-col items-start gap-4 sm:gap-6">
+                            <span
+                                className="inline-block -skew-x-6 px-5 py-1.5 sm:px-8 sm:py-2.5"
+                                style={{ backgroundColor: esTurnoDeA ? "var(--color-boss-blue)" : "var(--color-boss-red)" }}
+                            >
+                                <span className="inline-block skew-x-6 font-display text-xl uppercase tracking-wide text-white sm:text-3xl">
+                                    En batalla
+                                </span>
+                            </span>
+
+                            <p
+                                className="w-full font-display uppercase italic leading-[0.95] text-white"
+                                style={{
+                                    // clamp en vez de truncar: con nombres largos se achica solo
+                                    // (hasta cierto punto) y si de plano no alcanza, se envuelve a
+                                    // una segunda línea — nunca se corta con "...".
+                                    fontSize: "clamp(2.25rem, 6vw, 6rem)",
+                                    overflowWrap: "break-word",
+                                    WebkitTextStroke: `2px ${esTurnoDeA ? "var(--color-boss-blue)" : "var(--color-boss-red)"}`,
+                                    textShadow: `0 0 24px ${esTurnoDeA ? "var(--color-boss-blue)" : "var(--color-boss-red)"}`,
+                                }}
+                            >
+                                {nombreCompetidor(competidorEnTurno)}
+                            </p>
+
+                            {mostrarVuelta && (
+                                <div className="flex items-center gap-3">
+                                    <span
+                                        className="h-px w-10 sm:w-14"
+                                        style={{ backgroundColor: esTurnoDeA ? "var(--color-boss-blue)" : "var(--color-boss-red)" }}
+                                    />
+                                    <span className="font-display text-sm uppercase tracking-[0.3em] text-white/80 sm:text-lg">
+                                        Round {vuelta} de {totalVueltas}
+                                    </span>
+                                    <span
+                                        className="h-px w-10 sm:w-14"
+                                        style={{ backgroundColor: esTurnoDeA ? "var(--color-boss-blue)" : "var(--color-boss-red)" }}
+                                    />
+                                </div>
+                            )}
+
                             <p
                                 key={segundosRestantes}
-                                className="animate-numero-pop font-display text-7xl sm:text-8xl"
+                                className="animate-numero-pop font-display text-7xl text-white sm:text-9xl"
                                 style={{
-                                    color: esTurnoDeA ? "var(--color-boss-blue)" : "var(--color-boss-red)",
                                     textShadow: esTurnoDeA
                                         ? "0 0 28px var(--color-boss-blue), 0 0 56px var(--color-boss-blue)"
                                         : "0 0 28px var(--color-boss-red), 0 0 56px var(--color-boss-red)",
                                 }}
                             >
-                                {segundosRestantes}
+                                {formatoMmSs(segundosRestantes)}
                             </p>
-                        )}
+                        </div>
                     </div>
                 </div>
             )}
@@ -786,34 +958,117 @@ export function SecuenciaOverlay({
             )}
 
             {fase === "ganador" && (
-                <div key={ganoA ? "ganador-a" : "ganador-b"} className="animate-reflector-entrada absolute inset-0">
-                    <div className={`absolute inset-0 ${ganoA ? "fondo-ganador-azul" : "fondo-ganador-rojo"}`} />
+                <div
+                    key={ganoA ? "ganador-a" : "ganador-b"}
+                    className="animate-reflector-entrada absolute inset-0 flex flex-col justify-between overflow-hidden bg-black p-4 sm:p-8 select-none"
+                >
+                    {/* Fondo temático / gradiente */}
+                    <div
+                    className={`absolute inset-0 pointer-events-none opacity-40 bg-radial from-transparent to-black ${
+                        ganoA ? "fondo-ganador-azul" : "fondo-ganador-rojo"
+                    }`}
+                    />
 
-                    <div className="relative z-10 flex h-full flex-col items-center justify-center gap-4 pt-10">
-                        <p
-                            className={`font-display uppercase tracking-widest ${
-                                esCampeonDeCategoria ? "text-2xl text-yellow-400 sm:text-3xl" : "text-xl text-white/80 sm:text-2xl"
-                            }`}
-                        >
-                            {esCampeonDeCategoria ? "¡Campeón de la categoría!" : "¡Ganador!"}
+                    {/* ================= HEADER SUPERIOR ================= */}
+                    <header className="relative z-10 flex items-center justify-between gap-6 border-b border-red-600/60 pb-3">
+                    {/* Logotipo del evento — mismo logo e igual de grande que en
+                        PanelVersus y el encabezado de "en batalla", no el wordmark
+                        de texto chico que había antes. */}
+                    <Image
+                        src="/thebosslogo.jpeg"
+                        alt="THE BOSS — Breaking Battles"
+                        width={220}
+                        height={180}
+                        priority
+                        className="h-auto w-24 shrink-0 rounded-md drop-shadow-[0_0_15px_rgba(255,0,0,0.7)] sm:w-40"
+                    />
+
+                    {/* Categoría y Fase de la batalla — mismo tamaño grande que el
+                        resto de la secuencia (ver PanelVersus); pr-*: colchón para
+                        el itálico sintético, ver nota ahí. */}
+                    <div className="min-w-0 text-right">
+                        <h2 className="truncate font-display text-xl uppercase italic leading-none text-white drop-shadow-md sm:text-4xl pr-1 sm:pr-2">
+                        {CATEGORIAS[enfrentamiento.categoria]}
+                        </h2>
+                        <p className="mt-1 truncate font-display text-2xl uppercase italic leading-none text-red-500 drop-shadow-md sm:text-5xl pr-1 sm:pr-3">
+                        {enfrentamiento.ronda}
                         </p>
-
-                        <FotoCompetidorVs competidor={enfrentamiento.ganador} grande />
-
-                        <p
-                            className={`max-w-[85%] truncate font-display uppercase ${
-                                esCampeonDeCategoria ? "animate-campeon text-4xl text-yellow-400 sm:text-6xl" : "animate-ganador text-4xl text-white sm:text-6xl"
-                            }`}
-                        >
-                            {nombreCompetidor(enfrentamiento.ganador)}
-                        </p>
-
-                        {hayPuntajes && (
-                            <p className="font-display text-2xl text-white/90 sm:text-3xl">
-                                {ganoA ? enfrentamiento.puntajeA : enfrentamiento.puntajeB} pts
-                            </p>
-                        )}
                     </div>
+                    </header>
+
+                    {/* ================= CONTENIDO PRINCIPAL ================= */}
+                    <main className="relative z-10 grid grid-cols-1 md:grid-cols-12 gap-6 items-center flex-1 py-4">
+                    
+                    {/* Columna Izquierda: Foto del Competidor */}
+                    <div className="md:col-span-5 flex justify-center items-center">
+                        <div
+                        className={`relative p-1 rounded-sm shadow-2xl transition-all ${
+                            ganoA
+                            ? "border-2 border-blue-500 shadow-[0_0_25px_rgba(59,130,246,0.6)]"
+                            : "border-2 border-red-500 shadow-[0_0_25px_rgba(239,68,68,0.6)]"
+                        }`}
+                        >
+                        {/* Marco decorativo de esquina o brillo */}
+                        <div className="overflow-hidden rounded-sm bg-neutral-900 max-w-[420px] sm:max-w-[520px]">
+                            <FotoCompetidorVs competidor={enfrentamiento.ganador} grande anchoClase="w-[min(46vh,30rem)] aspect-[4/5]" />
+                        </div>
+                        </div>
+                    </div>
+
+                    {/* Columna Derecha: Bloque de Información y Ganador */}
+                    <div className="md:col-span-7 flex flex-col items-center justify-center text-center space-y-3 sm:space-y-4">
+                        
+                        {/* Banner ¡GANADOR! */}
+                        <div
+                        className={`relative px-8 py-2 transform -skew-x-12 border-2 ${
+                            ganoA
+                            ? "bg-blue-600/90 border-blue-400 shadow-[0_0_20px_rgba(37,99,235,0.8)]"
+                            : "bg-red-600/90 border-red-400 shadow-[0_0_20px_rgba(220,38,38,0.8)]"
+                        }`}
+                        >
+                        <span className="block transform skew-x-12 font-display text-2xl sm:text-4xl md:text-5xl font-black italic tracking-wider text-white uppercase drop-shadow-md">
+                            {esCampeonDeCategoria ? "¡CAMPEÓN!" : "¡GANADOR!"}
+                        </span>
+                        </div>
+
+                        {/* Nombre del Ganador */}
+                        <h1
+                        className={`font-display text-5xl sm:text-7xl md:text-8xl font-black uppercase tracking-tight text-white drop-shadow-[0_4px_12px_rgba(0,0,0,0.9)] ${
+                            esCampeonDeCategoria ? "animate-campeon text-yellow-400" : "animate-ganador"
+                        }`}
+                        >
+                        {nombreCompetidor(enfrentamiento.ganador)}
+                        </h1>
+
+                        {/* Puntajes */}
+                        {hayPuntajes && (
+                        <div className="flex items-center gap-3 w-full justify-center">
+                            <span className="h-[2px] w-12 sm:w-20 bg-blue-500/80" />
+                            <p className="font-display text-2xl sm:text-4xl font-bold tracking-wide text-white drop-shadow">
+                            {ganoA ? enfrentamiento.puntajeA : enfrentamiento.puntajeB} PUNTOS
+                            </p>
+                            <span className="h-[2px] w-12 sm:w-20 bg-blue-500/80" />
+                        </div>
+                        )}
+
+                        {/* Placa Inferior / Siguiente Ronda */}
+                        <div
+                        className={`relative px-6 py-1.5 transform -skew-x-12 border ${
+                            ganoA
+                            ? "bg-blue-950/80 border-blue-400 shadow-[0_0_15px_rgba(59,130,246,0.4)]"
+                            : "bg-red-950/80 border-red-400 shadow-[0_0_15px_rgba(239,68,68,0.4)]"
+                        }`}
+                        >
+                        <span className="block transform skew-x-12 font-display text-sm sm:text-lg md:text-xl font-bold italic tracking-widest text-white uppercase">
+                            {esCampeonDeCategoria ? "CAMPEÓN DE LA CATEGORÍA" : "AVANZA A LA SIGUIENTE RONDA"}
+                        </span>
+                        </div>
+
+                    </div>
+                    </main>
+
+                    {/* Borde inferior decorativo */}
+                    <div className="relative z-10 border-t border-red-600/60 pt-2" />
                 </div>
             )}
 

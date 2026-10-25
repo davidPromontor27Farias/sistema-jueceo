@@ -10,14 +10,12 @@ import {
     getBatallasEnCurso,
     getCategoriasEstado,
     getParticipantesPreseleccion,
-    getTurnoPreseleccionActual,
     type CompetidorResumen,
     type EnfrentamientoEnCurso,
     type ParticipantePreseleccion,
     type PuntajesCalificacion,
     type PuntajesPreseleccion,
     type ResultadoCalificacion,
-    type TurnoPreseleccion,
 } from "@/lib/adminApi";
 import { calcularLimites } from "../../../pantalla/SecuenciaBatalla";
 
@@ -160,67 +158,75 @@ const PUNTAJES_PRESELECCION_INICIALES: PuntajesPreseleccion = {
     originalidad: 0,
 };
 
-// Una categoría en fase de Preselección: sincronizada con quien está en
-// tarima ahora mismo (mismo turno que se ve en /pantalla) en vez de dejar que
-// el juez recorra una lista libre a su propio ritmo — el proceso es igual
-// que una batalla 1v1, pero en solitario.
+// Una categoría en fase de Preselección: muestra el listado completo de
+// competidores asignados al escenario de este juez, en el mismo orden en que
+// se van a presentar (orden de registro). El juez puede calificar a
+// cualquiera de la lista en cualquier momento — ya no depende de que el
+// staff los suba a tarima uno por uno ni de que corte la rutina; el staff
+// solo arranca la Preselección, el resto lo decide cada juez a su ritmo
+// según lo que vaya viendo en vivo.
 function PreseleccionCategoria({ categoria, escenarioId }: { categoria: Categoria; escenarioId: string }) {
     const [participantes, setParticipantes] = useState<ParticipantePreseleccion[] | null>(null);
-    const [turno, setTurno] = useState<TurnoPreseleccion>(null);
     const [error, setError] = useState<string | null>(null);
+    const [calificandoId, setCalificandoId] = useState<string | null>(null);
 
     const cargar = () => {
-        Promise.all([
-            getParticipantesPreseleccion(categoria, escenarioId),
-            getTurnoPreseleccionActual(categoria, escenarioId),
-        ]).then(([respParticipantes, respTurno]) => {
-            if (respParticipantes.ok) {
-                setParticipantes(respParticipantes.data.participantes);
+        getParticipantesPreseleccion(categoria, escenarioId).then((resp) => {
+            if (resp.ok) {
+                setParticipantes(resp.data.participantes);
                 setError(null);
             } else {
-                setError(respParticipantes.error);
+                setError(resp.error);
             }
-            if (respTurno.ok) setTurno(respTurno.data.turno);
         });
     };
 
     useEffect(() => {
         cargar();
-        const id = setInterval(cargar, 3000);
+        const id = setInterval(cargar, 4000);
         return () => clearInterval(id);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [categoria, escenarioId]);
 
-    // El turno-actual es público (no sabe quién pregunta), así que para saber
-    // si YO ya lo califiqué hay que cruzarlo con la lista de participantes
-    // (esa sí trae yaCalifique por juez, ver GET /preseleccion/participantes).
-    const enTarima = turno?.participante
-        ? (participantes ?? []).find((p) => p.id === turno.participante!.id) ?? null
-        : null;
+    const calificando = calificandoId ? participantes?.find((p) => p.id === calificandoId) ?? null : null;
 
     return (
         <div className="mt-6 rounded-lg border border-boss-border bg-boss-panel/60 p-5">
             <p className="font-display text-lg uppercase tracking-wide text-white">Preselección — {CATEGORIAS[categoria]}</p>
+            <p className="mt-1 text-sm text-boss-gray">
+                Califica a cada competidor de tu escenario conforme se vaya presentando, en el orden que prefieras.
+            </p>
 
             {error && <p className="mt-2 text-sm font-medium text-red-400">{error}</p>}
-
             {participantes === null && <p className="mt-2 text-boss-gray">Cargando...</p>}
-
-            {participantes !== null && !enTarima && (
-                <p className="mt-2 text-boss-gray">Esperando a que el staff suba al siguiente competidor a tarima.</p>
+            {participantes !== null && participantes.length === 0 && (
+                <p className="mt-2 text-boss-gray">No hay competidores asignados a tu escenario en esta categoría.</p>
             )}
 
-            {enTarima && enTarima.yaCalifique && (
-                <p className="mt-2 text-boss-gray">Ya calificaste a {nombreParticipante(enTarima)}. Esperando al siguiente.</p>
-            )}
-
-            {enTarima && !enTarima.yaCalifique && (
+            {calificando ? (
                 <FormularioPreseleccion
-                    key={enTarima.id}
-                    participante={enTarima}
-                    cortado={!!turno!.cortado}
-                    onCalificado={cargar}
+                    key={calificando.id}
+                    participante={calificando}
+                    onCalificado={() => {
+                        setCalificandoId(null);
+                        cargar();
+                    }}
+                    onCancelar={() => setCalificandoId(null)}
                 />
+            ) : (
+                participantes &&
+                participantes.length > 0 && (
+                    <div className="mt-3 space-y-2">
+                        {participantes.map((p, i) => (
+                            <FilaParticipante
+                                key={p.id}
+                                numero={i + 1}
+                                participante={p}
+                                onCalificar={() => setCalificandoId(p.id)}
+                            />
+                        ))}
+                    </div>
+                )
             )}
         </div>
     );
@@ -230,18 +236,48 @@ function nombreParticipante(p: ParticipantePreseleccion): string {
     return p.nombreArtistico || `${p.nombres} ${p.apellidos}`;
 }
 
-// Un participante a la vez, con guardado inmediato por request (no hay envío
-// por lote): si la conexión falla a mitad del evento, todo lo ya calificado
-// queda persistido en el servidor y solo se pierde el intento actual, que se
-// puede reintentar sin perder nada más.
+function FilaParticipante({
+    numero,
+    participante,
+    onCalificar,
+}: {
+    numero: number;
+    participante: ParticipantePreseleccion;
+    onCalificar: () => void;
+}) {
+    return (
+        <div className="flex items-center gap-3 rounded-md border border-boss-border bg-boss-black/40 px-3 py-2">
+            <span className="w-6 shrink-0 text-center font-display text-sm text-boss-gray">{numero}</span>
+            <span className="flex-1 truncate text-sm text-white">{nombreParticipante(participante)}</span>
+            {participante.yaCalifique ? (
+                <span className="shrink-0 rounded-full border border-boss-green/40 bg-boss-green/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-boss-green">
+                    ✓ Calificado
+                </span>
+            ) : (
+                <button
+                    type="button"
+                    onClick={onCalificar}
+                    className="shrink-0 rounded-md bg-boss-red px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-white transition-colors hover:bg-boss-red-dark"
+                >
+                    Calificar
+                </button>
+            )}
+        </div>
+    );
+}
+
+// Formulario de un participante elegido de la lista. Guardado inmediato por
+// request (no hay envío por lote): si la conexión falla a mitad del evento,
+// todo lo ya calificado queda persistido en el servidor y solo se pierde el
+// intento actual, que se puede reintentar sin perder nada más.
 function FormularioPreseleccion({
     participante,
-    cortado,
     onCalificado,
+    onCancelar,
 }: {
     participante: ParticipantePreseleccion;
-    cortado: boolean;
     onCalificado: () => void;
+    onCancelar: () => void;
 }) {
     const [puntajes, setPuntajes] = useState<PuntajesPreseleccion>(PUNTAJES_PRESELECCION_INICIALES);
     const [enviando, setEnviando] = useState(false);
@@ -262,17 +298,26 @@ function FormularioPreseleccion({
             setError(resp.error);
             return;
         }
-        setPuntajes(PUNTAJES_PRESELECCION_INICIALES);
         onCalificado();
     };
 
     return (
-        <div className="mt-4 rounded-md border border-boss-border p-4">
-            <p className="mb-3 text-center font-display text-base uppercase text-white">{nombreParticipante(participante)}</p>
+        <div className="mt-3 rounded-md border border-boss-border p-4">
+            <div className="flex items-center justify-between gap-3">
+                <p className="font-display text-base uppercase text-white">{nombreParticipante(participante)}</p>
+                <button
+                    type="button"
+                    onClick={onCancelar}
+                    disabled={enviando}
+                    className="shrink-0 text-xs uppercase tracking-wide text-boss-gray hover:text-white disabled:opacity-50"
+                >
+                    Volver a la lista
+                </button>
+            </div>
 
-            {error && <p className="mb-2 text-center text-sm font-medium text-red-400">{error}</p>}
+            {error && <p className="mb-2 mt-2 text-center text-sm font-medium text-red-400">{error}</p>}
 
-            <div className="space-y-4">
+            <div className="mt-3 space-y-4">
                 {CRITERIOS_BASE.map((criterio) => (
                     <div key={criterio} className="flex items-center justify-between gap-3">
                         <span className="text-2xl font-semibold text-boss-gray">{LABEL_CRITERIO[criterio]}</span>
@@ -281,12 +326,7 @@ function FormularioPreseleccion({
                 ))}
             </div>
 
-            {!cortado && (
-                <p className="mt-3 text-center text-sm text-boss-gray">
-                    Espera a que el staff cierre la rutina de este competidor para poder enviar.
-                </p>
-            )}
-            {cortado && !todosCalificados && (
+            {!todosCalificados && (
                 <p className="mt-3 text-center text-sm text-boss-gray">
                     Selecciona una calificación de 1 a 5 estrellas en cada criterio para poder enviar.
                 </p>
@@ -295,10 +335,10 @@ function FormularioPreseleccion({
             <button
                 type="button"
                 onClick={enviar}
-                disabled={enviando || !todosCalificados || !cortado}
+                disabled={enviando || !todosCalificados}
                 className="mt-4 w-full rounded-md bg-boss-red px-4 py-3 font-display text-lg uppercase tracking-wider text-white transition-colors hover:bg-boss-red-dark disabled:cursor-not-allowed disabled:opacity-50"
             >
-                {enviando ? "Guardando..." : "Guardar y siguiente"}
+                {enviando ? "Guardando..." : "Guardar calificación"}
             </button>
         </div>
     );

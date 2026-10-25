@@ -6,19 +6,15 @@ import { useAdminSession } from "../../AdminSessionContext";
 import { CATEGORIAS, type Categoria } from "@/config/catalog";
 import {
     cortarTurno,
-    cortarTurnoPreseleccion,
     finalizarBaile,
     generarBracket,
     generarTopBracket,
     getBatallasEnCurso,
     getCategoriasEstado,
     getEnfrentamientos,
-    getEscenariosDeCategoria,
     getPantallaEstado,
     getResultadosPreseleccionStaff,
-    getTurnoPreseleccionActual,
     iniciarPreseleccion,
-    iniciarTurnoPreseleccion,
     patchCategoriaEstado,
     patchPantallaEstado,
     updateEnfrentamiento,
@@ -31,7 +27,6 @@ import {
     type ParticipanteEmpatado,
     type PantallaEstado,
     type ResultadoPreseleccionItem,
-    type TurnoPreseleccion,
 } from "@/lib/adminApi";
 import { useSecuenciaBatalla, type EstadoSecuencia } from "../../../pantalla/SecuenciaBatalla";
 
@@ -270,7 +265,6 @@ function CompetenciaContenido() {
 // la ronda extra de repechaje — no hay ninguna selección manual que hacer
 // acá, solo informar quiénes van a repetir presentación.
 function PanelPreseleccion({ categoria, estatus }: { categoria: Categoria; estatus: EstatusCompetencia }) {
-    const [escenarios, setEscenarios] = useState<{ id: string; nombre: string; orden: number }[] | null>(null);
     const [resultados, setResultados] = useState<ResultadoPreseleccionItem[] | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [generando, setGenerando] = useState(false);
@@ -279,12 +273,8 @@ function PanelPreseleccion({ categoria, estatus }: { categoria: Categoria; estat
     useEffect(() => {
         let cancelado = false;
         const poll = async () => {
-            const [resEscenarios, resResultados] = await Promise.all([
-                getEscenariosDeCategoria(categoria),
-                getResultadosPreseleccionStaff(categoria),
-            ]);
+            const resResultados = await getResultadosPreseleccionStaff(categoria);
             if (cancelado) return;
-            if (resEscenarios.ok) setEscenarios(resEscenarios.data.escenarios);
             if (resResultados.ok) {
                 setResultados(resResultados.data.resultados);
                 setError(null);
@@ -304,6 +294,16 @@ function PanelPreseleccion({ categoria, estatus }: { categoria: Categoria; estat
     const ordenados = [...(resultados ?? [])].sort((a, b) => (b.puntajeTotal ?? -1) - (a.puntajeTotal ?? -1));
     const faltanPorCalificar = ordenados.filter((p) => !p.completo);
     const listoParaGenerar = resultados !== null && resultados.length >= 4 && faltanPorCalificar.length === 0;
+
+    // Roster por escenario (en vez de un panel de turno/tarima): agrupa el
+    // mismo ranking que ya se trae arriba por escenarioNombre, para mostrar
+    // quién presenta en cada uno y quién ya tiene su calificación completa.
+    const gruposPorEscenario = new Map<string, ResultadoPreseleccionItem[]>();
+    for (const r of ordenados) {
+        const clave = r.escenarioNombre ?? "Sin escenario";
+        if (!gruposPorEscenario.has(clave)) gruposPorEscenario.set(clave, []);
+        gruposPorEscenario.get(clave)!.push(r);
+    }
 
     const generar = async () => {
         setGenerando(true);
@@ -328,20 +328,20 @@ function PanelPreseleccion({ categoria, estatus }: { categoria: Categoria; estat
             </h2>
             <p className="mt-1 text-sm text-boss-gray">
                 {estatus === "REPECHAJE_DESEMPATE"
-                    ? "Hay un empate exacto en la frontera del corte. Los competidores empatados se consolidan en un solo escenario (los demás se deshabilitan para esta ronda) y vuelven a presentarse uno a uno — usa \"Cortar rutina\" al terminar cada presentación, el siguiente sube solo en cuanto los jueces califican. Se resuelve solo en cuanto terminen de recalificarlos."
-                    : "Cada juez puntúa individualmente a cada competidor pagado, dentro de su propio escenario. Usa \"Cortar rutina\" al terminar la presentación de cada quien — en cuanto todos los jueces califican, el siguiente sube solo a tarima. El corte automático toma la potencia de 2 más grande (4/8/16/32/64) que no exceda el total calificado, con seeding: mejor puntaje contra peor puntaje."}
+                    ? "Hay un empate exacto en la frontera del corte. Los competidores empatados se consolidan en un solo escenario (los demás se deshabilitan para esta ronda) y se vuelven a presentar — los jueces de ese escenario los recalifican desde su propio listado, en el orden que prefieran. Se resuelve solo en cuanto terminen."
+                    : "Cada juez puntúa individualmente a cada competidor pagado, dentro de su propio escenario, desde su propio listado (sin tarima ni turno compartido). El corte automático toma la potencia de 2 más grande (4/8/16/32/64) que no exceda el total calificado, con seeding: mejor puntaje contra peor puntaje."}
             </p>
 
             {error && <p className="mt-3 text-sm font-medium text-red-400">{error}</p>}
 
-            {escenarios === null && <p className="mt-4 text-boss-gray">Cargando escenarios...</p>}
-            {escenarios !== null && escenarios.length === 0 && (
-                <p className="mt-4 text-boss-gray">Esta categoría todavía no tiene escenarios asignados.</p>
+            {resultados === null && <p className="mt-4 text-boss-gray">Cargando...</p>}
+            {resultados !== null && resultados.length === 0 && (
+                <p className="mt-4 text-boss-gray">No hay competidores con pago confirmado en esta categoría.</p>
             )}
 
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                {escenarios?.map((esc) => (
-                    <TurnoEscenarioPanel key={esc.id} categoria={categoria} escenarioId={esc.id} escenarioNombre={esc.nombre} />
+                {[...gruposPorEscenario.entries()].map(([nombre, lista]) => (
+                    <RosterEscenario key={nombre} escenarioNombre={nombre} participantes={lista} />
                 ))}
             </div>
 
@@ -409,124 +409,36 @@ function PanelPreseleccion({ categoria, estatus }: { categoria: Categoria; estat
     );
 }
 
-// Un sub-panel de turno por escenario activo: quién está en tarima ahora
-// mismo en ESE escenario (cola independiente, ver Preselección Paralela
-// Multiescenario). Control manual de rutina: el ÚNICO control que el staff
-// usa en el flujo normal es "Cortar rutina" cuando el competidor termina de
-// presentarse (recién ahí los jueces pueden calificarlo) — en cuanto
-// califican todos, el siguiente sube solo a tarima (ver
-// avanzarTurnoPreseleccion en backend/src/routes/competencia.ts), sin
-// esperar ninguna acción del admin. "Iniciar turno" queda como respaldo
-// manual por si algún escenario se queda sin nadie en tarima (ej. tras un
-// error), pero no hace falta usarlo en operación normal.
-function TurnoEscenarioPanel({
-    categoria,
-    escenarioId,
+// Roster de un escenario: quién tiene asignado presentarse ahí y cuánto
+// avanzó su calificación — ya no hay tarima/turno compartido que controlar,
+// cada juez califica desde su propio listado (ver admin/jueceo) a su ritmo.
+function RosterEscenario({
     escenarioNombre,
+    participantes,
 }: {
-    categoria: Categoria;
-    escenarioId: string;
     escenarioNombre: string;
+    participantes: ResultadoPreseleccionItem[];
 }) {
-    const [turno, setTurno] = useState<TurnoPreseleccion>(null);
-    const [hayPendientes, setHayPendientes] = useState(false);
-    const [cortando, setCortando] = useState(false);
-    const [iniciando, setIniciando] = useState(false);
-    const [error, setError] = useState<string | null>(null);
-
-    useEffect(() => {
-        let cancelado = false;
-        const poll = async () => {
-            const resTurno = await getTurnoPreseleccionActual(categoria, escenarioId);
-            if (!cancelado && resTurno.ok) {
-                setTurno(resTurno.data.turno);
-                setHayPendientes(resTurno.data.hayPendientes);
-            }
-        };
-        poll();
-        const id = setInterval(poll, 4000);
-        return () => {
-            cancelado = true;
-            clearInterval(id);
-        };
-    }, [categoria, escenarioId]);
-
-    const cortarRutina = async () => {
-        setCortando(true);
-        setError(null);
-        const resultado = await cortarTurnoPreseleccion(categoria, escenarioId);
-        setCortando(false);
-        if (!resultado.ok) {
-            setError(resultado.error);
-            return;
-        }
-        setTurno(resultado.data.turno);
-    };
-
-    const iniciarTurno = async () => {
-        setIniciando(true);
-        setError(null);
-        const resultado = await iniciarTurnoPreseleccion(categoria, escenarioId);
-        setIniciando(false);
-        if (!resultado.ok) {
-            setError(resultado.error);
-            return;
-        }
-        setTurno(resultado.data.turno);
-    };
-
-    const calificacionCompleta = !!turno?.participante && turno.cortado && turno.calificacionesRecibidas >= turno.juecesActivos;
-    // "Iniciar turno" aplica tanto para subir al primero (nadie en tarima,
-    // quedan pendientes) como para reemplazar a quien ya terminó de
-    // calificarse.
-    const mostrarIniciarTurno = (!turno?.participante && hayPendientes) || calificacionCompleta;
-
     return (
         <div className="rounded-md border border-boss-border bg-boss-black/40 p-3">
             <p className="text-xs font-semibold uppercase tracking-widest text-boss-gray">{escenarioNombre}</p>
-            <div className="mt-1 flex flex-wrap items-center justify-between gap-3">
-                <div>
-                    <p className="font-display text-lg uppercase text-white">
-                        {turno?.participante
-                            ? turno.participante.nombreArtistico || `${turno.participante.nombres} ${turno.participante.apellidos}`
-                            : hayPendientes
-                              ? "— esperando —"
-                              : "— fila terminada —"}
-                    </p>
-                    {turno?.participante && (
-                        <p className="text-xs text-boss-gray">
-                            {!turno.cortado
-                                ? "Presentándose — todavía no se corta la rutina"
-                                : calificacionCompleta
-                                  ? "Calificación completa — listo para el siguiente"
-                                  : `${turno.calificacionesRecibidas}/${turno.juecesActivos} jueces calificaron`}
-                        </p>
-                    )}
-                </div>
-                <div className="flex gap-2">
-                    {turno?.participante && !turno.cortado && (
-                        <button
-                            type="button"
-                            onClick={cortarRutina}
-                            disabled={cortando}
-                            className="rounded-md border border-boss-red px-3 py-2 text-xs font-semibold uppercase tracking-wide text-boss-red transition-colors hover:bg-boss-red hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                            {cortando ? "..." : "Cortar rutina"}
-                        </button>
-                    )}
-                    {mostrarIniciarTurno && (
-                        <button
-                            type="button"
-                            onClick={iniciarTurno}
-                            disabled={iniciando}
-                            className="rounded-md bg-boss-red px-3 py-2 text-xs font-semibold uppercase tracking-wide text-white transition-colors hover:bg-boss-red-dark disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                            {iniciando ? "..." : "Iniciar turno"}
-                        </button>
-                    )}
-                </div>
+            <div className="mt-2 space-y-1.5">
+                {participantes.map((p) => (
+                    <div key={p.id} className="flex items-center justify-between gap-2 text-sm">
+                        <span className="truncate text-white">
+                            {p.nombreArtistico || `${p.nombres} ${p.apellidos}`}
+                            {p.numeroDesempate > 0 && (
+                                <span className="ml-2 rounded-full bg-yellow-500/15 px-2 py-0.5 text-[10px] normal-case text-yellow-400">
+                                    Repechaje {p.numeroDesempate}
+                                </span>
+                            )}
+                        </span>
+                        <span className={`shrink-0 text-xs ${p.completo ? "text-boss-green" : "text-boss-gray"}`}>
+                            {p.completo ? "✓ Calificado" : `${p.calificacionesRecibidas}/${p.juecesActivos} jueces`}
+                        </span>
+                    </div>
+                ))}
             </div>
-            {error && <p className="mt-2 text-xs font-medium text-red-400">{error}</p>}
         </div>
     );
 }

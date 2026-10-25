@@ -25,6 +25,22 @@ function nombreCompetidor(c: Enfrentamiento["competidorA"]): string {
     return c.nombreArtistico || `${c.nombres} ${c.apellidos}`;
 }
 
+// Mismo banner rojo inclinado que usa /pantalla/tablero para "Próximas
+// batallas" — lo reutilizamos acá como encabezado de cada sección
+// (Preselección, Octavos, Cuartos...) para mantener el mismo lenguaje visual
+// del resto del sistema.
+function BannerSeccion({ texto }: { texto: string }) {
+    return (
+        <div className="flex justify-center sm:justify-start">
+            <div className="relative -skew-x-6 bg-boss-red px-6 py-1.5 shadow-[0_0_20px_rgba(226,9,26,0.4)]">
+                <h2 className="skew-x-6 whitespace-nowrap font-display text-sm uppercase tracking-[0.2em] text-white sm:text-base">
+                    {texto}
+                </h2>
+            </div>
+        </div>
+    );
+}
+
 export default function ResultadosContenido() {
     const [categoriaActiva, setCategoriaActiva] = useState<Categoria>(CATEGORIAS_COMPETENCIA[0]!);
     const [resultadosPreseleccion, setResultadosPreseleccion] = useState<ResultadoPreseleccionItem[] | null>(null);
@@ -68,12 +84,42 @@ export default function ResultadosContenido() {
         (enfrentamientos ?? []).flatMap((e) => [e.competidorA?.id, e.competidorB?.id].filter((id): id is string => !!id)),
     );
 
-    const ordenados = [...(resultadosPreseleccion ?? [])].sort((a, b) => (b.puntajeTotal ?? -1) - (a.puntajeTotal ?? -1));
+    // Mismo orden que calcularCorte en el backend: puntajeTotal desc y, si
+    // empatan, originalidadTotal desc — así el orden que ve el público acá
+    // coincide con el que de verdad decidió quién clasificó.
+    const ordenados = [...(resultadosPreseleccion ?? [])].sort(
+        (a, b) => (b.puntajeTotal ?? -1) - (a.puntajeTotal ?? -1) || (b.originalidadTotal ?? -1) - (a.originalidadTotal ?? -1),
+    );
     const hayBracket = (enfrentamientos ?? []).length > 0;
     const rondas = Array.from(new Set((enfrentamientos ?? []).map((e) => e.rondaNumero))).sort((a, b) => a - b);
 
+    // Detecta un empate justo en el límite del corte (el último que clasificó
+    // y el primero que NO, con el mismo puntajeTotal) — para explicar acá con
+    // qué se desempató (Originalidad, o repechaje si hasta eso empató), en
+    // vez de dejar un "empate" aparente sin aclarar nada. Ver [[cutoff-tiebreak]].
+    let limiteEmpate: { inicio: number; fin: number; puntaje: number } | null = null;
+    if (hayBracket) {
+        for (let i = 0; i < ordenados.length - 1; i++) {
+            const actual = ordenados[i]!;
+            const siguiente = ordenados[i + 1]!;
+            if (
+                idsClasificados.has(actual.id) &&
+                !idsClasificados.has(siguiente.id) &&
+                actual.puntajeTotal != null &&
+                actual.puntajeTotal === siguiente.puntajeTotal
+            ) {
+                let inicio = i;
+                while (inicio > 0 && ordenados[inicio - 1]!.puntajeTotal === actual.puntajeTotal) inicio--;
+                let fin = i + 1;
+                while (fin < ordenados.length - 1 && ordenados[fin + 1]!.puntajeTotal === actual.puntajeTotal) fin++;
+                limiteEmpate = { inicio, fin, puntaje: actual.puntajeTotal };
+                break;
+            }
+        }
+    }
+
     return (
-        <div className="mt-2 flex min-h-0 w-full flex-1 flex-col">
+        <div className="mt-6 flex w-full flex-1 flex-col">
             <div className="flex shrink-0 flex-wrap justify-center gap-2">
                 {CATEGORIAS_COMPETENCIA.map((categoria) => (
                     <button
@@ -81,9 +127,9 @@ export default function ResultadosContenido() {
                         type="button"
                         onClick={() => setCategoriaActiva(categoria)}
                         className={[
-                            "rounded-md border px-3 py-1.5 text-sm font-semibold uppercase tracking-wide transition-colors",
+                            "rounded-full border px-4 py-1.5 font-display text-xs uppercase tracking-wide transition-colors sm:text-sm",
                             categoria === categoriaActiva
-                                ? "border-boss-red bg-boss-red/10 text-white"
+                                ? "border-boss-red bg-boss-red text-white shadow-[0_0_16px_rgba(226,9,26,0.6)]"
                                 : "border-boss-border text-boss-gray hover:border-boss-red hover:text-white",
                         ].join(" ")}
                     >
@@ -92,41 +138,88 @@ export default function ResultadosContenido() {
                 ))}
             </div>
 
-            <div className="mx-auto mt-6 w-full max-w-2xl flex-1 overflow-y-auto pb-10">
+            <div className="mx-auto mt-8 w-full max-w-2xl flex-1 pb-10">
                 {error && <p className="text-sm font-medium text-red-400">{error}</p>}
 
                 {resultadosPreseleccion === null && enfrentamientos === null && !error && (
-                    <p className="text-boss-gray">Cargando...</p>
+                    <p className="text-center text-boss-gray">Cargando...</p>
                 )}
 
                 {resultadosPreseleccion !== null && ordenados.length > 0 && (
                     <section>
-                        <h2 className="font-display text-sm uppercase tracking-widest text-boss-red">Preselección</h2>
-                        <div className="mt-3 space-y-1.5">
-                            {ordenados.map((p, i) => (
-                                <div
-                                    key={p.id}
-                                    className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-boss-border px-3 py-2 text-sm"
-                                >
-                                    <span className="text-white">
-                                        <span className="mr-2 text-boss-gray">#{i + 1}</span>
-                                        {nombreDe(p)}
-                                        {p.numeroDesempate > 0 && (
-                                            <span className="ml-2 rounded-full bg-yellow-500/15 px-2 py-0.5 text-[11px] normal-case text-yellow-400">
-                                                Repechaje {p.numeroDesempate}
-                                            </span>
+                        <BannerSeccion texto="Preselección" />
+                        <div className="mt-4 space-y-2">
+                            {ordenados.map((p, i) => {
+                                const enEmpateDeCorte = !!limiteEmpate && i >= limiteEmpate.inicio && i <= limiteEmpate.fin;
+                                return (
+                                    <div key={p.id}>
+                                        <div
+                                            className={`flex items-stretch overflow-hidden rounded-sm border bg-black/40 ${
+                                                enEmpateDeCorte ? "border-yellow-500/50" : "border-white/15"
+                                            }`}
+                                        >
+                                            <span className={`w-1.5 shrink-0 ${enEmpateDeCorte ? "bg-yellow-500" : "bg-boss-red"}`} />
+                                            <div className="flex flex-1 items-center gap-3 px-4 py-3">
+                                                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-white/25 font-display text-sm text-white sm:h-9 sm:w-9">
+                                                    {i + 1}
+                                                </span>
+                                                <div className="min-w-0 flex-1">
+                                                    <p className="truncate font-display text-base uppercase text-white sm:text-lg">
+                                                        {nombreDe(p)}
+                                                    </p>
+                                                    {(p.numeroDesempate > 0 || (hayBracket && idsClasificados.has(p.id)) || enEmpateDeCorte) && (
+                                                        <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                                                            {p.numeroDesempate > 0 && (
+                                                                <span className="rounded-full bg-yellow-500/15 px-2 py-0.5 text-[10px] uppercase tracking-wide text-yellow-400">
+                                                                    Repechaje {p.numeroDesempate}
+                                                                </span>
+                                                            )}
+                                                            {hayBracket && idsClasificados.has(p.id) && (
+                                                                <span className="rounded-full bg-boss-green/15 px-2 py-0.5 text-[10px] uppercase tracking-wide text-boss-green">
+                                                                    Clasificó
+                                                                </span>
+                                                            )}
+                                                            {enEmpateDeCorte && (
+                                                                <span className="text-[10px] uppercase tracking-wide text-yellow-400">
+                                                                    Originalidad: {p.originalidadTotal ?? "—"}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                <span
+                                                    className={`shrink-0 font-display text-xl sm:text-2xl ${
+                                                        p.completo ? "text-boss-green" : "text-boss-gray"
+                                                    }`}
+                                                >
+                                                    {p.puntajeTotal ?? "—"}
+                                                </span>
+                                            </div>
+                                        </div>
+
+                                        {/* Explicación del empate en el límite del corte, justo debajo
+                                            del último de la lista empatada (ver cálculo de limiteEmpate
+                                            arriba) — para que quede claro CÓMO se decidió quién pasó, no
+                                            solo que hubo empate. */}
+                                        {limiteEmpate && i === limiteEmpate.fin && (
+                                            <div className="mx-1 mt-2 rounded-sm border border-yellow-500/40 bg-yellow-500/10 px-4 py-3">
+                                                <p className="font-display text-xs uppercase tracking-wide text-yellow-400 sm:text-sm">
+                                                    Empate en {limiteEmpate.puntaje} pts, en el límite del corte
+                                                </p>
+                                                <p className="mt-1 text-xs text-white/80 sm:text-sm">
+                                                    {new Set(
+                                                        ordenados
+                                                            .slice(limiteEmpate.inicio, limiteEmpate.fin + 1)
+                                                            .map((r) => r.originalidadTotal),
+                                                    ).size > 1
+                                                        ? "Se desempató por mayor puntaje en Originalidad (se muestra arriba de cada quien)."
+                                                        : "También empataron en Originalidad — se resolvió con una ronda extra de repechaje."}
+                                                </p>
+                                            </div>
                                         )}
-                                        {hayBracket && idsClasificados.has(p.id) && (
-                                            <span className="ml-2 rounded-full bg-boss-green/15 px-2 py-0.5 text-[11px] normal-case text-boss-green">
-                                                Clasificó
-                                            </span>
-                                        )}
-                                    </span>
-                                    <span className={p.completo ? "text-boss-green" : "text-boss-gray"}>
-                                        {p.puntajeTotal ?? "—"} pts
-                                    </span>
-                                </div>
-                            ))}
+                                    </div>
+                                );
+                            })}
                         </div>
                     </section>
                 )}
@@ -135,41 +228,70 @@ export default function ResultadosContenido() {
                     const deEstaRonda = (enfrentamientos ?? []).filter((e) => e.rondaNumero === rondaNumero);
                     const nombreRonda = deEstaRonda[0]?.ronda ?? `Ronda ${rondaNumero}`;
                     return (
-                        <section key={rondaNumero} className="mt-8">
-                            <h2 className="font-display text-sm uppercase tracking-widest text-boss-red">{nombreRonda}</h2>
-                            <div className="mt-3 space-y-3">
+                        <section key={rondaNumero} className="mt-10">
+                            <BannerSeccion texto={nombreRonda} />
+                            <div className="mt-4 space-y-3">
                                 {deEstaRonda.map((e) => {
                                     const esBye = !e.competidorB && !!e.ganador;
                                     const ganoA = e.ganador?.id === e.competidorA?.id;
                                     const ganoB = e.ganador?.id === e.competidorB?.id;
+                                    const pendiente = !esBye && e.estatus !== "FINALIZADO";
                                     return (
-                                        <div key={e.id} className="rounded-md border border-boss-border p-3">
-                                            <div className="flex flex-wrap items-center justify-between gap-3">
-                                                <span className={`text-sm text-white ${ganoA ? "font-semibold text-boss-green" : ""}`}>
-                                                    {nombreCompetidor(e.competidorA)}
-                                                    {e.puntajeA != null && (
-                                                        <span className="ml-2 text-xs text-boss-gray">{e.puntajeA} pts</span>
-                                                    )}
-                                                </span>
-                                                {esBye ? (
-                                                    <span className="text-xs uppercase tracking-wide text-boss-gray">
-                                                        BYE — pase directo
-                                                    </span>
-                                                ) : (
-                                                    <>
-                                                        <span className="text-boss-gray">vs</span>
-                                                        <span className={`text-sm text-white ${ganoB ? "font-semibold text-boss-green" : ""}`}>
-                                                            {nombreCompetidor(e.competidorB)}
-                                                            {e.puntajeB != null && (
-                                                                <span className="ml-2 text-xs text-boss-gray">{e.puntajeB} pts</span>
-                                                            )}
+                                        <div
+                                            key={e.id}
+                                            className="flex items-stretch overflow-hidden rounded-sm border border-white/15 bg-black/40"
+                                        >
+                                            <span className={`w-1.5 shrink-0 ${e.estatus === "FINALIZADO" ? "bg-boss-red" : "bg-white/20"}`} />
+                                            <div className="flex-1">
+                                                <div className="flex items-center gap-3 px-4 py-3 sm:gap-4">
+                                                    <div className="min-w-0 flex-1 text-right">
+                                                        <p
+                                                            className={`truncate font-display text-base uppercase sm:text-xl ${
+                                                                ganoA ? "text-boss-green" : "text-white"
+                                                            }`}
+                                                        >
+                                                            {nombreCompetidor(e.competidorA)}
+                                                            {ganoA && <span className="ml-1">✓</span>}
+                                                        </p>
+                                                        {e.puntajeA != null && (
+                                                            <p className="text-xs text-boss-gray sm:text-sm">{e.puntajeA} pts</p>
+                                                        )}
+                                                    </div>
+
+                                                    {esBye ? (
+                                                        <span className="shrink-0 rounded-full bg-black/60 px-3 py-1 font-display text-[10px] uppercase tracking-wide text-boss-gray sm:text-xs">
+                                                            Bye
                                                         </span>
-                                                    </>
+                                                    ) : (
+                                                        <span className="shrink-0 font-display text-xs uppercase tracking-widest text-boss-gray sm:text-sm">
+                                                            vs
+                                                        </span>
+                                                    )}
+
+                                                    <div className="min-w-0 flex-1 text-left">
+                                                        {!esBye && (
+                                                            <>
+                                                                <p
+                                                                    className={`truncate font-display text-base uppercase sm:text-xl ${
+                                                                        ganoB ? "text-boss-green" : "text-white"
+                                                                    }`}
+                                                                >
+                                                                    {ganoB && <span className="mr-1">✓</span>}
+                                                                    {nombreCompetidor(e.competidorB)}
+                                                                </p>
+                                                                {e.puntajeB != null && (
+                                                                    <p className="text-xs text-boss-gray sm:text-sm">{e.puntajeB} pts</p>
+                                                                )}
+                                                            </>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                                {pendiente && (
+                                                    <div className="border-t border-white/10 px-4 py-1.5 text-center font-display text-[10px] uppercase tracking-widest text-boss-gray sm:text-xs">
+                                                        Pendiente
+                                                    </div>
                                                 )}
                                             </div>
-                                            {!esBye && e.estatus !== "FINALIZADO" && (
-                                                <p className="mt-1 text-xs uppercase tracking-wide text-boss-gray">Pendiente</p>
-                                            )}
                                         </div>
                                     );
                                 })}
@@ -182,7 +304,7 @@ export default function ResultadosContenido() {
                     ordenados.length === 0 &&
                     enfrentamientos !== null &&
                     enfrentamientos.length === 0 && (
-                        <p className="text-boss-gray">Todavía no hay resultados para esta categoría.</p>
+                        <p className="text-center text-boss-gray">Todavía no hay resultados para esta categoría.</p>
                     )}
             </div>
         </div>

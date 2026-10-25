@@ -86,6 +86,12 @@ export type Enfrentamiento = {
     puntajeB?: number | null;
     desgloseA?: DesglosePuntaje | null;
     desgloseB?: DesglosePuntaje | null;
+    // Con cuántos puntos empataron en el intento ANTERIOR (numeroDesempate -
+    // 1) — puntajeA/puntajeB ya están en 0 para el intento nuevo que recién
+    // arrancó. Null si nunca hubo empate (numeroDesempate === 0). Ver fase
+    // "empate" en SecuenciaBatalla.tsx.
+    puntajeEmpateA?: number | null;
+    puntajeEmpateB?: number | null;
 };
 
 export type VistaPantalla = "APAGADA" | "BRACKETS" | "RESULTADOS" | "ENFRENTAMIENTOS" | "GANADORES";
@@ -304,81 +310,6 @@ export function calificarPreseleccion(registrationId: string, puntajes: Puntajes
     });
 }
 
-// Quién está en tarima ahora mismo en la fase de Preselección: lo consumen
-// tanto /pantalla (nombre+foto, sin cronómetro, ver
-// frontend/src/app/pantalla/SecuenciaPreseleccion.tsx) como admin/jueceo (a
-// quién calificar) y Admin > Competencia (botón "Cortar rutina"). `cortado`
-// es la única señal de fase: sin él ningún juez puede calificar — no hay
-// cronómetro en Preselección, el staff decide cuándo cerrar la rutina.
-// `completo`/`calificacionesRecibidas`/`juecesActivos` reflejan el avance de
-// calificación de ESE participante puntual (no confundir con el ranking
-// general de PanelPreseleccion), nunca su puntaje (ver Privacidad de
-// calificaciones en filtros).
-export type TurnoPreseleccion = {
-    participante: CompetidorResumen;
-    categoria: Categoria;
-    escenarioId: string;
-    iniciadoEn: string;
-    cortado: boolean;
-    calificacionesRecibidas: number;
-    juecesActivos: number;
-    completo: boolean;
-} | null;
-
-// `hayPendientes`: si queda alguien en la cola de este escenario sin haber
-// empezado su turno todavía (sin contar a quien ya está en tarima) — decide
-// si el panel ofrece "Iniciar turno" o "Fila terminada".
-export function getTurnoPreseleccionActual(categoria: Categoria, escenarioId: string) {
-    return adminFetch<{ turno: TurnoPreseleccion; hayPendientes: boolean }>(
-        `/api/competencia/categorias/${categoria}/preseleccion/turno-actual?escenarioId=${escenarioId}`,
-    );
-}
-
-// Solo staff: cierra la rutina del competidor en tarima — a partir de este
-// clic los jueces de ese escenario pueden calificarlo. No hay cronómetro en
-// Preselección, así que esto reemplaza cualquier avance por tiempo.
-export function cortarTurnoPreseleccion(categoria: Categoria, escenarioId: string) {
-    return adminFetch<{ turno: TurnoPreseleccion }>(
-        `/api/competencia/categorias/${categoria}/preseleccion/cortar-turno?escenarioId=${escenarioId}`,
-        { method: "POST" },
-    );
-}
-
-// Control manual de rutina: sube manualmente al siguiente competidor de la
-// cola de UN escenario — reemplaza el avance automático que subía solo en
-// cuanto todos los jueces calificaban al anterior. El staff decide cuándo.
-export function iniciarTurnoPreseleccion(categoria: Categoria, escenarioId: string) {
-    return adminFetch<{ turno: TurnoPreseleccion }>(
-        `/api/competencia/categorias/${categoria}/preseleccion/iniciar-turno?escenarioId=${escenarioId}`,
-        { method: "POST" },
-    );
-}
-
-// Los siguientes en la fila de Preselección (sin el que está en tarima, sin
-// puntajes): lo usa el tablero secundario para "próximas presentaciones".
-export type ProximoPreseleccionItem = {
-    id: string;
-    nombreArtistico: string;
-    nombres: string;
-    apellidos: string;
-    competidorId: string | null;
-    fotoUrl: string | null;
-};
-
-export function getProximosPreseleccion(categoria: Categoria, escenarioId: string) {
-    return adminFetch<{ proximos: ProximoPreseleccionItem[] }>(
-        `/api/competencia/categorias/${categoria}/preseleccion/proximos?escenarioId=${escenarioId}`,
-    );
-}
-
-// Escenarios participando en la Preselección/Repechaje vigente de una
-// categoría (uno por cada sub-panel que debe mostrar el admin).
-export function getEscenariosDeCategoria(categoria: Categoria) {
-    return adminFetch<{ escenarios: { id: string; nombre: string; orden: number }[] }>(
-        `/api/competencia/categorias/${categoria}/preseleccion/escenarios`,
-    );
-}
-
 // Arranca la Preselección de una categoría: reparte a los competidores
 // pagados entre los escenarios con jueces activos. Reemplaza el uso de
 // patchCategoriaEstado(categoria, "PRESELECCION"), que ahora el backend
@@ -410,6 +341,10 @@ export type ResultadoPreseleccionItem = {
     // fila puede tener uno distinto — ver Preselección Paralela Multiescenario).
     juecesActivos: number;
     puntajeTotal: number | null;
+    // Criterio de desempate cuando dos o más empatan en puntajeTotal (ver
+    // calcularCorte en el backend) — se expone para que /resultados pueda
+    // mostrar con qué se desempató en el límite del corte.
+    originalidadTotal: number | null;
     completo: boolean;
 };
 
