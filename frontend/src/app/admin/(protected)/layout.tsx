@@ -14,6 +14,7 @@ const NAV_ITEMS: { href: string; label: string; abrev: string; roles: RolAdmin[]
     { href: "/admin/competencia", label: "Competencia", abrev: "CP", roles: ["SUPER_ADMIN", "STAFF_JUECEO"] },
     { href: "/admin/jueceo", label: "Jueceo", abrev: "JZ", roles: ["JUEZ"] },
     { href: "/admin/acceso", label: "Acceso", abrev: "AC", roles: ["SUPER_ADMIN", "STAFF_ACCESO"] },
+    { href: "/admin/workshops", label: "Workshops", abrev: "WK", roles: ["SUPER_ADMIN", "STAFF_ACCESO"] },
 ];
 
 const ROL_LABEL: Record<RolAdmin, string> = {

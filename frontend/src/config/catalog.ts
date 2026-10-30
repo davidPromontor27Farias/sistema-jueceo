@@ -207,6 +207,22 @@ export const PRECIO_MXN_CENTAVOS_WORKSHOP_INDIVIDUAL = 25000;
 export const PRECIO_MXN_CENTAVOS_WORKSHOP_BUNDLE_3 = 60000;
 export const PRECIO_MXN_CENTAVOS_OPEN_STYLE_ADDON = 25000;
 
+// Nombre + instructor de cada número de workshop — Registration solo guarda
+// el número elegido (workshopsSeleccionados/workshopsOpenStyleSeleccionados,
+// ver registro/steps/StepCategoria.tsx), así que cualquier pantalla que
+// necesite mostrar CUÁL workshop es (no solo el número) usa esta tabla.
+export const WORKSHOPS_BREAKING: Record<number, string> = {
+    1: "Fundamentos y Progresiones de Power — Bboy Alvin",
+    2: "Powermoves — Bboy Lil G",
+    3: "Transiciones y Combos — Bboy Victor",
+};
+
+export const WORKSHOPS_OPEN_STYLE: Record<number, string> = {
+    1: "Hip Hop Groove — Jeremmy Morales",
+    2: "Locking mastering — Alexis Vega",
+    3: "Identidad en el baile — Dela MP",
+};
+
 // --- Preventa Fundadores: 20% OFF adicional ---
 // Descuento adicional del 20% sobre el total completo de la compra (cualquier
 // paquete + workshops + extras), exclusivo para los primeros

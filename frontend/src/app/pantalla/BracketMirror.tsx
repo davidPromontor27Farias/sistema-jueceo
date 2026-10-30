@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { Enfrentamiento } from "@/lib/adminApi";
 
 function nombreCompetidor(c: Enfrentamiento["competidorA"]): string {
-    if (!c) return "Por definir";
+    if (!c) return "-----";
     return c.nombreArtistico || `${c.nombres} ${c.apellidos}`;
 }
 
@@ -75,25 +75,28 @@ function generarRondasFantasma(reales: Enfrentamiento[]): Enfrentamiento[] {
     // con los ganadores que ya se conocen, aunque esa ronda todavía no exista
     // de verdad en el backend (que solo la crea hasta que TODA la ronda
     // anterior termine): en cuanto alguien gana en dieciseisavos, su nombre
-    // ya debe aparecer en el lugar que le toca en cuartos. El alimentador
-    // `orden*2` siempre cae en el competidor A del partido siguiente y
-    // `orden*2+1` en el competidor B — el mismo invariante que ya usa todo el
-    // layout (ver calcularLados/calcularLayoutBracket).
+    // ya debe aparecer en el lugar que le toca en cuartos. El lado alterna por
+    // paridad en cada ronda (ver calcularLados) y el alimentador respeta ESE
+    // mismo lado (ver alimentadoresDe) — nunca el índice global orden*2/
+    // orden*2+1, que cruzaría de lado.
     const rondaAnteriorReal = reales.filter((e) => e.rondaNumero === rondaMaxReal);
 
     for (let ronda = rondaMaxReal + 1; ronda <= totalRondas; ronda++) {
         const count = Math.ceil(countAnterior / 2);
         const nombre = nombreRonda(ronda, totalRondas);
         const esPrimeraFantasma = ronda === rondaMaxReal + 1;
+        const esFinalFantasma = ronda === totalRondas;
 
         for (let orden = 0; orden < count; orden++) {
             const id = `fantasma-${ronda}-${orden}`;
+            const lado: Lado = esFinalFantasma ? "centro" : orden % 2 === 0 ? "izquierda" : "derecha";
 
             let competidorA: Enfrentamiento["competidorA"] = null;
             let competidorB: Enfrentamiento["competidorB"] = null;
             if (esPrimeraFantasma) {
-                const feederA = rondaAnteriorReal.find((e) => e.orden === orden * 2);
-                const feederB = rondaAnteriorReal.find((e) => e.orden === orden * 2 + 1);
+                const [ordenA, ordenB] = lado === "centro" ? [0, 1] : alimentadoresDe(orden, lado);
+                const feederA = rondaAnteriorReal.find((e) => e.orden === ordenA);
+                const feederB = rondaAnteriorReal.find((e) => e.orden === ordenB);
                 competidorA = feederA?.ganador ?? null;
                 competidorB = feederB?.ganador ?? null;
             }
@@ -125,60 +128,52 @@ function generarRondasFantasma(reales: Enfrentamiento[]): Enfrentamiento[] {
     return resultado;
 }
 
-function siguientePotenciaDeDos(n: number): number {
-    let p = 1;
-    while (p < n) p *= 2;
-    return p;
-}
-
-// Partir la ronda 1 justo a la mitad de su cantidad NO es seguro cuando esa
-// cantidad es impar: un partido de rondas posteriores podría terminar
-// alimentado por partidos de ambos lados. Alinear el corte a la siguiente
-// potencia de 2 garantiza que el invariante orden=k <- {2k, 2k+1} nunca cruce
-// de un lado al otro, sin importar cuántos byes haya.
-function tamanoLadoIzquierdo(n1: number): number {
-    if (n1 <= 1) return 0;
-    return siguientePotenciaDeDos(n1) / 2;
-}
-
+// Lado de cada partido por la PARIDAD de su `orden`, en cada ronda por
+// separado — no se hereda del alimentador. El cliente pidió ver el mismo
+// orden del listado (1 vs 16, 2 vs 15, 3 vs 14...) reflejado directo en el
+// bracket, alternando: 1vs16 izquierda, 2vs15 derecha, 3vs14 izquierda...
+// Como cada ronda siempre tiene una cantidad par de partidos (emparejarConSiembra
+// arma el árbol del tamaño de potencia de 2 más chica que alcanza, ver
+// backend/src/lib/brackets.ts), alternar por paridad siempre reparte mitad y
+// mitad sin casos impares que resolver.
 function calcularLados(enfrentamientos: Enfrentamiento[]): Map<string, Lado> {
     const lados = new Map<string, Lado>();
     const clave = (rondaNumero: number, orden: number) => `${rondaNumero}-${orden}`;
 
-    const ronda1 = enfrentamientos.filter((e) => e.rondaNumero === 1).sort((a, b) => a.orden - b.orden);
-    const n1 = ronda1.length;
-    const tamanoIzquierda = tamanoLadoIzquierdo(n1);
-
-    for (const e of ronda1) {
+    for (const e of enfrentamientos) {
         if (e.ronda === "Final") {
             lados.set(clave(e.rondaNumero, e.orden), "centro");
         } else {
-            lados.set(clave(1, e.orden), e.orden < tamanoIzquierda ? "izquierda" : "derecha");
-        }
-    }
-
-    const rondaMax = Math.max(1, ...enfrentamientos.map((e) => e.rondaNumero));
-    for (let ronda = 2; ronda <= rondaMax; ronda++) {
-        for (const e of enfrentamientos.filter((x) => x.rondaNumero === ronda)) {
-            if (e.ronda === "Final") {
-                lados.set(clave(ronda, e.orden), "centro");
-                continue;
-            }
-            // El lado se hereda del primer alimentador — nunca se recalcula
-            // por el tamaño de esta ronda, que es justo lo que se puede
-            // desalinear en ramas con bye en profundidades impares.
-            const ladoFeeder1 = lados.get(clave(ronda - 1, e.orden * 2));
-            const ladoFeeder2 = lados.get(clave(ronda - 1, e.orden * 2 + 1));
-            const heredado = ladoFeeder1 ?? ladoFeeder2;
-            if (heredado && heredado !== "centro") {
-                lados.set(clave(ronda, e.orden), heredado);
-            } else {
-                console.warn(`[BracketMirror] no se pudo derivar lado para ${ronda}-${e.orden}`);
-            }
+            lados.set(clave(e.rondaNumero, e.orden), e.orden % 2 === 0 ? "izquierda" : "derecha");
         }
     }
 
     return lados;
+}
+
+// Qué dos partidos de la ronda ANTERIOR alimentan (visualmente) a este —
+// SIEMPRE del mismo lado que el partido que alimentan, para que la línea
+// conectora nunca cruce de un lado al otro. Como el lado ya no se hereda (ver
+// calcularLados: alterna por paridad en cada ronda por separado), un partido
+// en orden par y el siguiente en orden impar quedan en lados opuestos — si se
+// siguiera usando el índice global (orden*2, orden*2+1) para alimentar, CADA
+// partido tomaría un alimentador de cada lado, cruzando la línea de por
+// medio (el bug que reportó el cliente: "salta al siguiente y conecta hasta
+// el tercero"). En vez de eso, se calcula el índice LOCAL de este partido
+// dentro de su propio lado (orden/2, redondeado hacia abajo) y se alimenta de
+// los dos índices locales correspondientes (2*local, 2*local+1) traducidos
+// de vuelta a orden global DEL MISMO LADO (lado==="derecha" ? local*2+1 :
+// local*2). Es una construcción puramente geométrica para que el árbol se
+// vea limpio — el bracket ya NO conserva la posición fija de la ronda 1 de
+// todas formas (ver Reordenamiento dinámico en intentarAvanzarRonda), así que
+// no hay una "ascendencia real" que preservar, solo claridad visual.
+function ordenGlobalDeLadoLocal(lado: Lado, indiceLocal: number): number {
+    return lado === "derecha" ? indiceLocal * 2 + 1 : indiceLocal * 2;
+}
+
+function alimentadoresDe(orden: number, lado: Lado): [number, number] {
+    const indiceLocal = Math.floor(orden / 2);
+    return [ordenGlobalDeLadoLocal(lado, indiceLocal * 2), ordenGlobalDeLadoLocal(lado, indiceLocal * 2 + 1)];
 }
 
 type LayoutBracket = {
@@ -213,8 +208,11 @@ function calcularLayoutBracket(enfrentamientos: Enfrentamiento[]): LayoutBracket
 
     const ronda1 = enfrentamientos.filter((e) => e.rondaNumero === 1).sort((a, b) => a.orden - b.orden);
     const n1 = ronda1.length;
-    const tamanoIzquierda = tamanoLadoIzquierdo(n1);
-    const tamanoDerecha = n1 - tamanoIzquierda;
+    // orden par -> izquierda, impar -> derecha (ver calcularLados): como n1
+    // siempre es par (potencia de 2, ver emparejarConSiembra en el backend),
+    // ambos lados quedan siempre mitad y mitad.
+    const tamanoIzquierda = Math.ceil(n1 / 2);
+    const tamanoDerecha = Math.floor(n1 / 2);
 
     const altoIzquierda = Math.max(tamanoIzquierda, 1) * ALTO_SLOT;
     const altoDerecha = Math.max(tamanoDerecha, 1) * ALTO_SLOT;
@@ -230,12 +228,17 @@ function calcularLayoutBracket(enfrentamientos: Enfrentamiento[]): LayoutBracket
 
     const posiciones = new Map<string, Posicion>();
 
+    // Mismo slot vertical (orden / 2, redondeado hacia abajo) para los dos
+    // lados: el partido 1v16 (orden 0, izquierda) y el 2v15 (orden 1,
+    // derecha) comparten la fila de arriba; 3v14 (orden 2) y 4v13 (orden 3)
+    // la siguiente, y así sucesivamente — de arriba hacia abajo, tal como se
+    // ve en el listado de resultados.
     for (const e of ronda1) {
         const lado = lados.get(`1-${e.orden}`);
+        const slot = Math.floor(e.orden / 2);
         if (lado === "izquierda") {
-            posiciones.set(`1-${e.orden}`, { x: xIzquierda(1), y: offsetIzquierda + e.orden * ALTO_SLOT + ALTO_SLOT / 2 });
+            posiciones.set(`1-${e.orden}`, { x: xIzquierda(1), y: offsetIzquierda + slot * ALTO_SLOT + ALTO_SLOT / 2 });
         } else if (lado === "derecha") {
-            const slot = e.orden - tamanoIzquierda;
             posiciones.set(`1-${e.orden}`, { x: xDerecha(1), y: offsetDerecha + slot * ALTO_SLOT + ALTO_SLOT / 2 });
         }
     }
@@ -244,8 +247,9 @@ function calcularLayoutBracket(enfrentamientos: Enfrentamiento[]): LayoutBracket
         for (const e of enfrentamientos.filter((x) => x.rondaNumero === ronda)) {
             const lado = lados.get(`${ronda}-${e.orden}`);
             if (lado !== "izquierda" && lado !== "derecha") continue;
-            const feeder1 = posiciones.get(`${ronda - 1}-${e.orden * 2}`);
-            const feeder2 = posiciones.get(`${ronda - 1}-${e.orden * 2 + 1}`);
+            const [ordenF1, ordenF2] = alimentadoresDe(e.orden, lado);
+            const feeder1 = posiciones.get(`${ronda - 1}-${ordenF1}`);
+            const feeder2 = posiciones.get(`${ronda - 1}-${ordenF2}`);
             if (!feeder1) continue;
             const y = feeder2 ? (feeder1.y + feeder2.y) / 2 : feeder1.y;
             const x = lado === "izquierda" ? xIzquierda(ronda) : xDerecha(ronda);
@@ -291,8 +295,9 @@ function ConectoresBracket({ enfrentamientos, layout }: { enfrentamientos: Enfre
             const lado = lados.get(`${ronda}-${e.orden}`);
             if (lado !== "izquierda" && lado !== "derecha") continue;
             const pos = posiciones.get(`${ronda}-${e.orden}`);
-            const feeder1 = posiciones.get(`${ronda - 1}-${e.orden * 2}`);
-            const feeder2 = posiciones.get(`${ronda - 1}-${e.orden * 2 + 1}`);
+            const [ordenF1, ordenF2] = alimentadoresDe(e.orden, lado);
+            const feeder1 = posiciones.get(`${ronda - 1}-${ordenF1}`);
+            const feeder2 = posiciones.get(`${ronda - 1}-${ordenF2}`);
             if (!pos || !feeder1) continue;
 
             const bordeSalida = lado === "izquierda" ? "derecha" : "izquierda";
@@ -380,7 +385,7 @@ function TarjetaBracket({
 
     return (
         <div className="absolute text-left" style={{ left: pos.x, top: pos.y - ALTO_TARJETA / 2, width: ANCHO_TARJETA }}>
-            <div className="overflow-hidden rounded-md border border-boss-border bg-boss-panel shadow-lg shadow-black/40">
+            <div className="overflow-hidden rounded-md border border-white/20 bg-neutral-900 shadow-xl shadow-black/80">
                 <div className="border-b border-boss-border px-2.5 py-1.5 text-sm uppercase tracking-wide text-boss-gray">
                     {enfrentamiento.estatus === "FINALIZADO" ? "Finalizado" : "Pendiente"}
                 </div>
@@ -404,6 +409,30 @@ function TarjetaBracket({
     );
 }
 
+// Logo de fondo del bracket completo (ancho y alto completos, escalado por
+// ALTO para que se vea grande), con una viñeta oscura encima — se renderiza
+// UNA sola vez como la primera capa del bracket (ver BracketMirror), nunca
+// mezclado entre las tarjetas: antes vivía dentro de TarjetaBracketFinal, pero
+// al ocupar todo el ancho terminaba pintándose ENCIMA de tarjetas normales que
+// React dibujaba después en el DOM (sin orden de rondas garantizado), y las
+// dejaba viéndose opacas/lavadas — el bug que reportó el cliente.
+function FondoLogoBracket({ ancho, alto }: { ancho: number; alto: number }) {
+    return (
+        <div
+            className="pointer-events-none absolute flex items-center justify-center overflow-hidden"
+            style={{ left: 0, top: 0, width: ancho, height: alto }}
+        >
+            <img src="/thebosslogo.jpeg" className="h-full w-auto max-w-none opacity-30" />
+            <div
+                className="absolute inset-0"
+                style={{
+                    background: "radial-gradient(ellipse at center, transparent 0%, rgba(10,10,10,0.7) 65%, rgba(10,10,10,1) 100%)",
+                }}
+            />
+        </div>
+    );
+}
+
 function TarjetaBracketFinal({
     enfrentamiento,
     pos,
@@ -414,31 +443,24 @@ function TarjetaBracketFinal({
     resaltarId?: string;
 }) {
     return (
-        <div className="relative ">
-            <img  src="/thebosslogo.jpeg" className="absolute w-80 top-3/4 left-1/2 -translate-x-1/2 -translate-y-1/2"/>
-            <div
-                className="animate-brillo-final absolute overflow-hidden rounded-lg border-2 border-boss-red bg-boss-panel text-left shadow-2xl shadow-black/60"
-                style={{ left: pos.x, top: pos.y - ALTO_TARJETA_FINAL / 2, width: ANCHO_TARJETA_FINAL }}
-            >
-
-                <div className="flex items-center justify-center gap-1.5 border-b border-boss-red/50 bg-boss-red/10 px-2 py-2 font-display text-xl uppercase tracking-widest text-boss-red">
-                    Final
-                </div>
-                <FilaCompetidorBracket
-                    competidor={enfrentamiento.competidorA}
-                    esGanador={!!enfrentamiento.ganador && enfrentamiento.ganador.id === enfrentamiento.competidorA?.id}
-                    resaltado={!!resaltarId && enfrentamiento.competidorA?.id === resaltarId}
-                />
-                <FilaCompetidorBracket
-                    competidor={enfrentamiento.competidorB}
-                    esGanador={!!enfrentamiento.ganador && enfrentamiento.ganador.id === enfrentamiento.competidorB?.id}
-                    resaltado={!!resaltarId && enfrentamiento.competidorB?.id === resaltarId}
-                />
+        <div
+            className="animate-brillo-final absolute overflow-hidden rounded-lg border-2 border-boss-red bg-neutral-900 text-left shadow-2xl shadow-black/80"
+            style={{ left: pos.x, top: pos.y - ALTO_TARJETA_FINAL / 2, width: ANCHO_TARJETA_FINAL }}
+        >
+            <div className="flex items-center justify-center gap-1.5 border-b border-boss-red/50 bg-boss-red/10 px-2 py-2 font-display text-xl uppercase tracking-widest text-boss-red">
+                Final
             </div>
-
+            <FilaCompetidorBracket
+                competidor={enfrentamiento.competidorA}
+                esGanador={!!enfrentamiento.ganador && enfrentamiento.ganador.id === enfrentamiento.competidorA?.id}
+                resaltado={!!resaltarId && enfrentamiento.competidorA?.id === resaltarId}
+            />
+            <FilaCompetidorBracket
+                competidor={enfrentamiento.competidorB}
+                esGanador={!!enfrentamiento.ganador && enfrentamiento.ganador.id === enfrentamiento.competidorB?.id}
+                resaltado={!!resaltarId && enfrentamiento.competidorB?.id === resaltarId}
+            />
         </div>
-
-
     );
 }
 
@@ -531,6 +553,7 @@ export function BracketMirror({
                 <FilaRondasEspejo columnasPorLado={columnasPorLado} nombreDeRonda={nombreDeRonda} />
 
                 <div className="absolute inset-x-0 bottom-0" style={{ height: altoTotal }}>
+                    <FondoLogoBracket ancho={anchoTotal} alto={altoTotal} />
                     <ConectoresBracket enfrentamientos={enfrentamientos} layout={layout} />
                     {enfrentamientos.map((e) => {
                         const pos = posiciones.get(`${e.rondaNumero}-${e.orden}`);

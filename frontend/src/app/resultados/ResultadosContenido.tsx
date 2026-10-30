@@ -84,19 +84,30 @@ export default function ResultadosContenido() {
         (enfrentamientos ?? []).flatMap((e) => [e.competidorA?.id, e.competidorB?.id].filter((id): id is string => !!id)),
     );
 
-    // Mismo orden que calcularCorte en el backend: puntajeTotal desc y, si
-    // empatan, originalidadTotal desc — así el orden que ve el público acá
-    // coincide con el que de verdad decidió quién clasificó.
+    // Cadena de desempate del reglamento, igual que calcularCorte en el
+    // backend: puntajeTotal desc, y si empatan, Musicalidad -> Ejecución ->
+    // Originalidad -> Técnica (Vocabulario no es criterio de desempate) —
+    // así el orden que ve el público acá coincide con el que de verdad
+    // decidió quién clasificó.
     const ordenados = [...(resultadosPreseleccion ?? [])].sort(
-        (a, b) => (b.puntajeTotal ?? -1) - (a.puntajeTotal ?? -1) || (b.originalidadTotal ?? -1) - (a.originalidadTotal ?? -1),
+        (a, b) =>
+            (b.puntajeTotal ?? -1) - (a.puntajeTotal ?? -1) ||
+            (b.musicalidadTotal ?? -1) - (a.musicalidadTotal ?? -1) ||
+            (b.ejecucionTotal ?? -1) - (a.ejecucionTotal ?? -1) ||
+            (b.originalidadTotal ?? -1) - (a.originalidadTotal ?? -1) ||
+            (b.tecnicaTotal ?? -1) - (a.tecnicaTotal ?? -1),
     );
     const hayBracket = (enfrentamientos ?? []).length > 0;
     const rondas = Array.from(new Set((enfrentamientos ?? []).map((e) => e.rondaNumero))).sort((a, b) => a - b);
 
-    // Detecta un empate justo en el límite del corte (el último que clasificó
-    // y el primero que NO, con el mismo puntajeTotal) — para explicar acá con
-    // qué se desempató (Originalidad, o repechaje si hasta eso empató), en
-    // vez de dejar un "empate" aparente sin aclarar nada. Ver [[cutoff-tiebreak]].
+    // Detecta un empate en PUNTAJE justo en el límite del corte (el último
+    // que clasificó y el primero que NO, con el mismo puntajeTotal) — esto
+    // cubre tanto el caso típico (se resolvió por Musicalidad/Ejecución/
+    // Originalidad/Técnica, sin repechaje) como el empate total que sí lo
+    // disparó; criterioQueDesempato (abajo) decide cuál mensaje mostrar. Si
+    // acá solo se exigiera que TODOS los criterios coincidieran, el caso
+    // típico (resuelto por un criterio más abajo en la cadena) nunca se
+    // detectaría y no se explicaría nada — justo lo que reportó el cliente.
     let limiteEmpate: { inicio: number; fin: number; puntaje: number } | null = null;
     if (hayBracket) {
         for (let i = 0; i < ordenados.length - 1; i++) {
@@ -116,6 +127,23 @@ export default function ResultadosContenido() {
                 break;
             }
         }
+    }
+
+    // De la cadena de desempate (Musicalidad -> Ejecución -> Originalidad ->
+    // Técnica), cuál fue el primer criterio en el que el grupo empatado NO
+    // coincide todos exactamente — ese es el que explica el orden entre
+    // ellos. Null si coinciden en los 4 (ahí sí hace falta el repechaje).
+    function criterioQueDesempato(grupo: ResultadoPreseleccionItem[]): string | null {
+        const CRITERIOS: { etiqueta: string; valor: (r: ResultadoPreseleccionItem) => number | null }[] = [
+            { etiqueta: "Musicalidad", valor: (r) => r.musicalidadTotal },
+            { etiqueta: "Ejecución", valor: (r) => r.ejecucionTotal },
+            { etiqueta: "Originalidad", valor: (r) => r.originalidadTotal },
+            { etiqueta: "Técnica", valor: (r) => r.tecnicaTotal },
+        ];
+        for (const { etiqueta, valor } of CRITERIOS) {
+            if (new Set(grupo.map(valor)).size > 1) return etiqueta;
+        }
+        return null;
     }
 
     return (
@@ -181,7 +209,9 @@ export default function ResultadosContenido() {
                                                             )}
                                                             {enEmpateDeCorte && (
                                                                 <span className="text-[10px] uppercase tracking-wide text-yellow-400">
-                                                                    Originalidad: {p.originalidadTotal ?? "—"}
+                                                                    Musicalidad {p.musicalidadTotal ?? "—"} · Ejecución{" "}
+                                                                    {p.ejecucionTotal ?? "—"} · Originalidad{" "}
+                                                                    {p.originalidadTotal ?? "—"} · Técnica {p.tecnicaTotal ?? "—"}
                                                                 </span>
                                                             )}
                                                         </div>
@@ -207,13 +237,14 @@ export default function ResultadosContenido() {
                                                     Empate en {limiteEmpate.puntaje} pts, en el límite del corte
                                                 </p>
                                                 <p className="mt-1 text-xs text-white/80 sm:text-sm">
-                                                    {new Set(
-                                                        ordenados
-                                                            .slice(limiteEmpate.inicio, limiteEmpate.fin + 1)
-                                                            .map((r) => r.originalidadTotal),
-                                                    ).size > 1
-                                                        ? "Se desempató por mayor puntaje en Originalidad (se muestra arriba de cada quien)."
-                                                        : "También empataron en Originalidad — se resolvió con una ronda extra de repechaje."}
+                                                    {(() => {
+                                                        const criterio = criterioQueDesempato(
+                                                            ordenados.slice(limiteEmpate.inicio, limiteEmpate.fin + 1),
+                                                        );
+                                                        return criterio
+                                                            ? `Se desempató por mayor puntaje en ${criterio} (se muestra arriba de cada quien).`
+                                                            : "Empataron también en Musicalidad, Ejecución, Originalidad y Técnica — se resolvió con una ronda extra de repechaje en el mismo escenario.";
+                                                    })()}
                                                 </p>
                                             </div>
                                         )}

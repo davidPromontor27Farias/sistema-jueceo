@@ -241,6 +241,29 @@ export function createEscenario(data: { nombre: string; orden?: number; activo?:
     return adminFetch<{ escenario: Escenario }>("/api/escenarios", { method: "POST", body: JSON.stringify(data) });
 }
 
+// Solo staff: quién compró al menos un Workshop (Breaking u Open Style),
+// competidor o público en general — para identificarlos en el evento. El
+// filtro por nombre se hace en el frontend sobre esta misma lista.
+export type WorkshopComprador = {
+    id: string;
+    nombres: string;
+    apellidos: string;
+    nombreArtistico: string;
+    categoria: Categoria;
+    categoriaLabel: string;
+    tipo: "COMPETIDOR" | "PUBLICO";
+    competidorId: string | null;
+    telefono: string;
+    correo: string;
+    workshopsSeleccionados: number[];
+    workshopsOpenStyleSeleccionados: number[];
+    estadoAcceso: EstadoAcceso;
+};
+
+export function getWorkshops() {
+    return adminFetch<{ workshops: WorkshopComprador[] }>("/api/workshops");
+}
+
 export function updateEscenario(id: string, data: Partial<{ nombre: string; orden: number; activo: boolean }>) {
     return adminFetch<{ escenario: Escenario }>(`/api/escenarios/${id}`, { method: "PATCH", body: JSON.stringify(data) });
 }
@@ -341,10 +364,14 @@ export type ResultadoPreseleccionItem = {
     // fila puede tener uno distinto — ver Preselección Paralela Multiescenario).
     juecesActivos: number;
     puntajeTotal: number | null;
-    // Criterio de desempate cuando dos o más empatan en puntajeTotal (ver
-    // calcularCorte en el backend) — se expone para que /resultados pueda
-    // mostrar con qué se desempató en el límite del corte.
+    // Cadena de desempate cuando dos o más empatan en puntajeTotal (ver
+    // calcularCorte en el backend): Musicalidad -> Ejecución -> Originalidad
+    // -> Técnica — se expone para que /resultados pueda mostrar con qué se
+    // desempató en el límite del corte.
+    musicalidadTotal: number | null;
+    ejecucionTotal: number | null;
     originalidadTotal: number | null;
+    tecnicaTotal: number | null;
     completo: boolean;
 };
 
@@ -369,7 +396,10 @@ export type RankingPreseleccionItem = {
     id: string;
     nombre: string;
     puntajeTotal: number;
+    musicalidadTotal: number;
+    ejecucionTotal: number;
     originalidadTotal: number;
+    tecnicaTotal: number;
     clasificado: boolean;
 };
 
