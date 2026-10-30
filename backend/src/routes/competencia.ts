@@ -15,9 +15,18 @@ import {
     type EmparejamientoSlot,
 } from "../lib/brackets";
 import { CATEGORIAS_LABEL, type Categoria } from "../config/catalog";
+import type { EstadoAcceso } from "../generated/prisma/client";
 
 const TODAS_LAS_CATEGORIAS = Object.keys(CATEGORIAS_LABEL) as Categoria[];
 const CATEGORIAS_ENUM = TODAS_LAS_CATEGORIAS as [Categoria, ...Categoria[]];
+
+// Haber pagado no basta para entrar a Preselección/bracket: también hay que
+// haberse presentado y que el staff escaneara el QR en la entrada (ver
+// EstadoAcceso). NO_USADO queda fuera (nunca se presentó) y BLOQUEADO
+// también (el staff lo bloqueó a propósito, no debe seguir compitiendo
+// aunque haya entrado antes) — FUERA_TEMPORAL sí cuenta: ya demostró que se
+// presentó, estar fuera un momento (comiendo, baño) no lo descalifica.
+const ESTADOS_ACCESO_ELEGIBLES: EstadoAcceso[] = ["DENTRO", "FUERA_TEMPORAL", "REINGRESO"];
 
 // Mínimo de competidores calificados para poder usar Preselección (ver
 // tamanoTopBracketPreseleccion); con menos, se usa el sorteo directo
@@ -606,12 +615,19 @@ competenciaRouter.post(
         }
 
         const competidores = await prisma.registration.findMany({
-            where: { categoria, estatusPago: "PAGADO", esPrueba: await modoPruebaActivo() },
+            where: {
+                categoria,
+                estatusPago: "PAGADO",
+                esPrueba: await modoPruebaActivo(),
+                estadoAcceso: { in: ESTADOS_ACCESO_ELEGIBLES },
+            },
             select: { id: true },
             orderBy: { createdAt: "asc" },
         });
         if (competidores.length === 0) {
-            return res.status(400).json({ error: "No hay competidores con pago confirmado en esta categoría" });
+            return res
+                .status(400)
+                .json({ error: "No hay competidores con pago confirmado Y escaneados en la entrada en esta categoría" });
         }
 
         const lotes = repartirEnLotes(
@@ -655,7 +671,12 @@ competenciaRouter.get("/competidores", requireRole("SUPER_ADMIN", "STAFF_JUECEO"
     }
 
     const competidores = await prisma.registration.findMany({
-        where: { categoria: rawCategoria as Categoria, estatusPago: "PAGADO", esPrueba: await modoPruebaActivo() },
+        where: {
+            categoria: rawCategoria as Categoria,
+            estatusPago: "PAGADO",
+            esPrueba: await modoPruebaActivo(),
+            estadoAcceso: { in: ESTADOS_ACCESO_ELEGIBLES },
+        },
         select: { id: true, nombreArtistico: true, nombres: true, apellidos: true, competidorId: true },
         orderBy: { nombreArtistico: "asc" },
     });
@@ -682,7 +703,13 @@ competenciaRouter.get(
         }
 
         const participantes = await prisma.registration.findMany({
-            where: { categoria, preseleccionEscenarioId: escenarioId, estatusPago: "PAGADO", esPrueba: await modoPruebaActivo() },
+            where: {
+                categoria,
+                preseleccionEscenarioId: escenarioId,
+                estatusPago: "PAGADO",
+                esPrueba: await modoPruebaActivo(),
+                estadoAcceso: { in: ESTADOS_ACCESO_ELEGIBLES },
+            },
             select: {
                 id: true,
                 nombreArtistico: true,
@@ -762,6 +789,9 @@ competenciaRouter.post("/preseleccion/:registrationId/calificar", requireRole("J
     }
     if (registro.estatusPago !== "PAGADO") {
         return res.status(400).json({ error: "Este competidor no tiene pago confirmado" });
+    }
+    if (!ESTADOS_ACCESO_ELEGIBLES.includes(registro.estadoAcceso)) {
+        return res.status(400).json({ error: "Este competidor no ha sido escaneado en la entrada del evento" });
     }
     // findUnique solo admite el id, así que el filtro por modo se hace acá:
     // si el registro no corresponde al modo activo (prueba vs real), se
@@ -859,12 +889,15 @@ export interface ResultadoPreseleccionDetallado {
     calificacionesRecibidas: number;
     juecesActivos: number;
     puntajeTotal: number | null;
-    // Suma de Originalidad entre jueces — el criterio de desempate cuando dos
-    // o más quedan con el mismo puntajeTotal (ver calcularCorte en
-    // generar-top-bracket). Se expone para que /resultados pueda mostrar CON
-    // QUÉ se desempató en el límite del corte, en vez de dejar un empate
-    // aparente sin explicación.
+    // Cadena de desempate del reglamento (ver calcularCorte en
+    // generar-top-bracket): Musicalidad -> Ejecución -> Originalidad ->
+    // Técnica. Se exponen para que /resultados pueda mostrar CON QUÉ se
+    // desempató en el límite del corte, en vez de dejar un empate aparente
+    // sin explicación.
+    musicalidadTotal: number | null;
+    ejecucionTotal: number | null;
     originalidadTotal: number | null;
+    tecnicaTotal: number | null;
     completo: boolean;
 }
 
@@ -877,7 +910,12 @@ export interface ResultadoPreseleccionDetallado {
 // "completo" es solo un dato más por fila.
 async function calcularResultadosPreseleccionDetallados(categoria: Categoria): Promise<ResultadoPreseleccionDetallado[]> {
     const participantes = await prisma.registration.findMany({
-        where: { categoria, estatusPago: "PAGADO", esPrueba: await modoPruebaActivo() },
+        where: {
+            categoria,
+            estatusPago: "PAGADO",
+            esPrueba: await modoPruebaActivo(),
+            estadoAcceso: { in: ESTADOS_ACCESO_ELEGIBLES },
+        },
         select: {
             id: true,
             nombreArtistico: true,
@@ -888,6 +926,12 @@ async function calcularResultadosPreseleccionDetallados(categoria: Categoria): P
             preseleccionNumeroDesempate: true,
             preseleccionEscenario: { select: { id: true, nombre: true } },
         },
+        // Mismo orden que GET /preseleccion/participantes (el que ve cada
+        // juez): createdAt asc. Sin esto, el roster público (pantalla/tablero/
+        // resultados) salía en el orden "natural" de la tabla (no garantizado,
+        // podía cambiar entre consultas) y no coincidía con la lista del
+        // juez — confundía a los jueces sobre quién sigue.
+        orderBy: { createdAt: "asc" },
     });
     const ids = participantes.map((p) => p.id);
     const sumas = await prisma.puntuacionPreseleccion.groupBy({
@@ -921,7 +965,10 @@ async function calcularResultadosPreseleccionDetallados(categoria: Categoria): P
                   (s._sum.musicalidad ?? 0) +
                   (s._sum.originalidad ?? 0)
                 : null;
+            const musicalidadTotal = s ? s._sum.musicalidad ?? 0 : null;
+            const ejecucionTotal = s ? s._sum.ejecucion ?? 0 : null;
             const originalidadTotal = s ? s._sum.originalidad ?? 0 : null;
+            const tecnicaTotal = s ? s._sum.tecnica ?? 0 : null;
             return {
                 id: p.id,
                 nombreArtistico: p.nombreArtistico,
@@ -935,15 +982,20 @@ async function calcularResultadosPreseleccionDetallados(categoria: Categoria): P
                 calificacionesRecibidas,
                 juecesActivos,
                 puntajeTotal,
+                musicalidadTotal,
+                ejecucionTotal,
                 originalidadTotal,
+                tecnicaTotal,
                 completo: juecesActivos > 0 && calificacionesRecibidas >= juecesActivos,
             };
-        })
-        // Mismo orden que calcularCorte (generar-top-bracket): puntajeTotal
-        // desc y, si empatan, originalidadTotal desc — así el orden que ve el
-        // público en /resultados coincide con el que de verdad decidió quién
-        // clasificó, no solo el puntaje total.
-        .sort((a, b) => (b.puntajeTotal ?? -1) - (a.puntajeTotal ?? -1) || (b.originalidadTotal ?? -1) - (a.originalidadTotal ?? -1));
+        });
+        // Sin reordenar por puntaje acá a propósito: este mismo resultado lo
+        // usa tanto el roster en vivo (SecuenciaPreseleccion.tsx/pantalla —
+        // necesita el orden de createdAt de la consulta de arriba, igual que
+        // el juez) como /resultados (que sí necesita el ranking por puntaje,
+        // pero ya lo ordena él mismo en el frontend). Reordenar aquí por
+        // puntaje rompía el orden del roster en cuanto empezaban a variar los
+        // puntajes — el bug que reportó el cliente.
 
     return resultados;
 }
@@ -968,7 +1020,14 @@ function ocultarPuntajesSiNoRevelado(
     revelado: boolean,
 ): ResultadoPreseleccionDetallado[] {
     if (revelado) return resultados;
-    return resultados.map((r) => ({ ...r, puntajeTotal: null, originalidadTotal: null }));
+    return resultados.map((r) => ({
+        ...r,
+        puntajeTotal: null,
+        musicalidadTotal: null,
+        ejecucionTotal: null,
+        originalidadTotal: null,
+        tecnicaTotal: null,
+    }));
 }
 
 // Público: la pantalla del evento lee esto sin autenticarse. Ver
@@ -1035,11 +1094,18 @@ competenciaRouter.post(
         }
 
         const competidores = await prisma.registration.findMany({
-            where: { categoria, estatusPago: "PAGADO", esPrueba: await modoPruebaActivo() },
+            where: {
+                categoria,
+                estatusPago: "PAGADO",
+                esPrueba: await modoPruebaActivo(),
+                estadoAcceso: { in: ESTADOS_ACCESO_ELEGIBLES },
+            },
             select: { id: true },
         });
         if (competidores.length < 2) {
-            return res.status(400).json({ error: "Se necesitan al menos 2 competidores con pago confirmado" });
+            return res
+                .status(400)
+                .json({ error: "Se necesitan al menos 2 competidores con pago confirmado Y escaneados en la entrada" });
         }
 
         const totalRondas = totalRondasParaParticipantes(competidores.length);
@@ -1080,12 +1146,19 @@ interface RankingPreseleccion {
     id: string;
     nombre: string;
     puntajeTotal: number;
+    // Cadena de desempate del reglamento, en este orden: Musicalidad ->
+    // Ejecución -> Originalidad -> Técnica (Vocabulario queda fuera, no es
+    // criterio de desempate). Ver calcularCorte.
+    musicalidadTotal: number;
+    ejecucionTotal: number;
     originalidadTotal: number;
+    tecnicaTotal: number;
     escenarioId: string | null;
-    // Orden de registro: desempata cuando dos
-    // Originalidad, fuera de la frontera del corte (ahí sí se lanza
-    // REPECHAJE_DESEMPATE, ver calcularCorte) — sin esto el orden entre
-    // ellos sería arbitrario (orden de la consulta a la base).
+    // Último recurso, fuera de la frontera del corte (ahí sí se lanza
+    // REPECHAJE_DESEMPATE si hasta la cadena completa de criterios sigue
+    // exactamente igual, ver calcularCorte) — sin esto el orden entre
+    // quienes ya agotaron toda la cadena sería arbitrario (orden de la
+    // consulta a la base).
     presentadoEn: Date;
 }
 
@@ -1107,7 +1180,12 @@ async function calcularRankingPreseleccion(
     categoria: Categoria,
 ): Promise<{ ranking: RankingPreseleccion[]; faltantes: FaltantePreseleccion[] } | { error: string }> {
     const competidores = await prisma.registration.findMany({
-        where: { categoria, estatusPago: "PAGADO", esPrueba: await modoPruebaActivo() },
+        where: {
+            categoria,
+            estatusPago: "PAGADO",
+            esPrueba: await modoPruebaActivo(),
+            estadoAcceso: { in: ESTADOS_ACCESO_ELEGIBLES },
+        },
         select: {
             id: true,
             nombreArtistico: true,
@@ -1120,7 +1198,7 @@ async function calcularRankingPreseleccion(
     });
     if (competidores.length < MINIMO_PRESELECCION) {
         return {
-            error: `Se necesitan al menos ${MINIMO_PRESELECCION} competidores con pago confirmado para usar preselección; para categorías más chicas usa "Generar bracket" directo.`,
+            error: `Se necesitan al menos ${MINIMO_PRESELECCION} competidores con pago confirmado Y escaneados en la entrada para usar preselección; para categorías más chicas usa "Generar bracket" directo.`,
         };
     }
 
@@ -1157,15 +1235,24 @@ async function calcularRankingPreseleccion(
             id: c.id,
             nombre,
             puntajeTotal,
+            musicalidadTotal: s!._sum.musicalidad ?? 0,
+            ejecucionTotal: s!._sum.ejecucion ?? 0,
             originalidadTotal: s!._sum.originalidad ?? 0,
+            tecnicaTotal: s!._sum.tecnica ?? 0,
             escenarioId: c.preseleccionEscenarioId,
             presentadoEn: c.createdAt,
         });
     }
+    // Cadena de desempate del reglamento: puntaje total -> Musicalidad ->
+    // Ejecución -> Originalidad -> Técnica -> orden de registro (último
+    // recurso, no dispara repechaje por sí solo, ver calcularCorte).
     ranking.sort(
         (a, b) =>
             b.puntajeTotal - a.puntajeTotal ||
+            b.musicalidadTotal - a.musicalidadTotal ||
+            b.ejecucionTotal - a.ejecucionTotal ||
             b.originalidadTotal - a.originalidadTotal ||
+            b.tecnicaTotal - a.tecnicaTotal ||
             a.presentadoEn.getTime() - b.presentadoEn.getTime(),
     );
 
@@ -1180,9 +1267,12 @@ interface ResultadoCorte {
 
 // Corta el ranking ya ordenado al Top N (tamaño fijo por rango de competidores
 // calificados, ver tamanoTopBracketPreseleccion). Si el último lugar que
-// clasifica empata en puntaje+desempate con alguien fuera del corte, devuelve
-// la lista de empatados sin cortar — el orden entre ellos sería arbitrario
-// (orden de llegada, no del reglamento).
+// clasifica empata con alguien fuera del corte en TODA la cadena de
+// desempate del reglamento (puntaje total, Musicalidad, Ejecución,
+// Originalidad y Técnica — Vocabulario no cuenta), devuelve la lista de
+// empatados sin cortar — el orden entre ellos sería arbitrario (orden de
+// llegada, no del reglamento), así que se manda a una batalla adicional en
+// el mismo escenario (ver REPECHAJE_DESEMPATE) en vez de decidir a ciegas.
 function calcularCorte(ranking: RankingPreseleccion[]): ResultadoCorte | { error: string } {
     const topN = tamanoTopBracketPreseleccion(ranking.length);
     if (!topN) {
@@ -1191,7 +1281,13 @@ function calcularCorte(ranking: RankingPreseleccion[]): ResultadoCorte | { error
 
     const limite = ranking[topN - 1]!;
     const empatados = ranking.filter(
-        (r, i) => i >= topN - 1 && r.puntajeTotal === limite.puntajeTotal && r.originalidadTotal === limite.originalidadTotal,
+        (r, i) =>
+            i >= topN - 1 &&
+            r.puntajeTotal === limite.puntajeTotal &&
+            r.musicalidadTotal === limite.musicalidadTotal &&
+            r.ejecucionTotal === limite.ejecucionTotal &&
+            r.originalidadTotal === limite.originalidadTotal &&
+            r.tecnicaTotal === limite.tecnicaTotal,
     );
 
     if (empatados.length > 1) {
@@ -1303,7 +1399,13 @@ async function resolverCorteOLanzarRepechaje(categoria: Categoria): Promise<Resu
 // patrón que la fase 1v1).
 async function intentarResolverRepechaje(categoria: Categoria): Promise<void> {
     const empatados = await prisma.registration.findMany({
-        where: { categoria, preseleccionNumeroDesempate: { gt: 0 }, estatusPago: "PAGADO", esPrueba: await modoPruebaActivo() },
+        where: {
+            categoria,
+            preseleccionNumeroDesempate: { gt: 0 },
+            estatusPago: "PAGADO",
+            esPrueba: await modoPruebaActivo(),
+            estadoAcceso: { in: ESTADOS_ACCESO_ELEGIBLES },
+        },
         select: { id: true, preseleccionEscenarioId: true, preseleccionNumeroDesempate: true },
     });
     if (empatados.length === 0) return;

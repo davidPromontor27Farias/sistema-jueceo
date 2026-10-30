@@ -13,8 +13,26 @@ import { vistaRegistrosRouter } from "./routes/vistaRegistros";
 import { configuracionEventoRouter } from "./routes/configuracionEvento";
 import { registrationsPruebaRouter } from "./routes/registrationsPrueba";
 import { escenariosRouter } from "./routes/escenarios";
+import { workshopsRouter } from "./routes/workshops";
 import { origenesFrontendPermitidos } from "./lib/origenes";
 
+
+// Colchón final: Express 5 ya atrapa sola las excepciones de los handlers de
+// ruta (async que truenan) y las convierte en 500 sin tumbar el proceso, y el
+// adapter de Prisma ya maneja los errores de conexión de Postgres — pero si
+// algo truena FUERA del ciclo de una petición (poco probable, pero no
+// imposible), antes esto cerraba el proceso sin dejar rastro. Se loguea y se
+// sale con código de error para que Railway lo reinicie solo (restart policy
+// por defecto), en vez de quedarse corriendo en un estado posiblemente
+// corrupto.
+process.on("unhandledRejection", (reason) => {
+    console.error("[unhandledRejection]", reason);
+    process.exit(1);
+});
+process.on("uncaughtException", (error) => {
+    console.error("[uncaughtException]", error);
+    process.exit(1);
+});
 
 const app = express();
 
@@ -50,6 +68,7 @@ app.use("/api/auth", authRouter);
 app.use("/api/admins", adminsRouter);
 app.use("/api/escenarios", escenariosRouter);
 app.use("/api/competencia", competenciaRouter);
+app.use("/api/workshops", workshopsRouter);
 app.use("/api/pantalla", pantallaRouter);
 app.use("/api/vista-registros", vistaRegistrosRouter);
 

@@ -34,44 +34,33 @@ export function tamanoTopBracketPreseleccion(n: number): number | null {
     return null;
 }
 
-// Orden de siembra estándar de torneo (1 vs size, 2 vs size-1, ... para la
-// ronda 1, pero posicionados en el árbol para que los seeds 1 y 2 no puedan
-// enfrentarse hasta la final). Recursivo: ordenSiembra(2n) intercala cada
-// seed de ordenSiembra(n) con su espejo (2n+1-s).
-function ordenSiembra(size: number): number[] {
-    if (size <= 1) return [1];
-    const mitad = ordenSiembra(size / 2);
-    const resultado: number[] = [];
-    for (const s of mitad) {
-        resultado.push(s, size + 1 - s);
-    }
-    return resultado;
-}
-
 // Empareja una lista YA ORDENADA de mejor a peor (seed 1 = participantes[0])
-// aplicando el seeding estándar de torneo, con bye automático para los
+// con el seeding más simple de torneo: 1 vs size, 2 vs size-1, 3 vs size-2...
+// en ESE orden (el slot 0 siempre es 1 vs size, el slot 1 siempre es 2 vs
+// size-1, etc.) — a propósito NO se usa el "entrelazado" recursivo que
+// reparte los seeds altos por todo el árbol para que no se puedan enfrentar
+// hasta la final: el cliente pidió ver el listado tal cual (1 vs 16, 2 vs 15,
+// 3 vs 14...), sin que el orden de aparición "salte". Bye automático para los
 // mejores seeds cuando `participantesOrdenados.length` no es potencia de 2.
 // A diferencia del emparejamiento viejo (un solo bye, arrastrado ronda tras
 // ronda), aquí TODOS los byes de la ronda quedan resueltos de una vez: el
 // tamaño del árbol es siempre la potencia de 2 más chica que alcanza, así que
 // la ronda 2 en adelante recibe una cantidad que ya es potencia de 2.
 //
-// Nota: el primer elemento de cada pareja (orden[i]) siempre es un seed real
-// (nunca bye), porque el tamaño del árbol es la potencia de 2 más chica que
-// alcanza para `n` participantes: eso garantiza n > size/2, y todo seed
-// <= size/2 (que es justo el primer elemento de cada pareja en ordenSiembra)
-// cae dentro de ese rango.
+// Nota: el primer elemento de cada pareja (el seed del loop) nunca es bye,
+// porque el tamaño del árbol es la potencia de 2 más chica que alcanza para
+// `n` participantes: eso garantiza n > size/2, y todo seed <= size/2 (el
+// rango del loop) cae dentro de ese rango.
 export function emparejarConSiembra<T>(participantesOrdenados: T[]): EmparejamientoSlot<T>[] {
     const n = participantesOrdenados.length;
     if (n === 0) return [];
     const size = siguientePotenciaDe2(n);
-    const orden = ordenSiembra(size);
     const porSeed = (seed: number): T | null => (seed <= n ? participantesOrdenados[seed - 1]! : null);
 
     const slots: EmparejamientoSlot<T>[] = [];
-    for (let i = 0; i < orden.length; i += 2) {
-        const a = porSeed(orden[i]!);
-        const b = porSeed(orden[i + 1]!);
+    for (let seed = 1; seed <= size / 2; seed++) {
+        const a = porSeed(seed);
+        const b = porSeed(size + 1 - seed);
         slots.push({ competidorA: a as T, competidorB: b });
     }
     return slots;
