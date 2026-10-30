@@ -54,7 +54,7 @@ export default function ResultadosContenido() {
 
         const poll = async () => {
             const [resPreseleccion, resEnfrentamientos] = await Promise.all([
-                getResultadosPreseleccion(categoriaActiva),
+                getResultadosPreseleccion(categoriaActiva, true),
                 getEnfrentamientos(categoriaActiva),
             ]);
             if (cancelado) return;

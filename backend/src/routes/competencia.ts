@@ -908,13 +908,23 @@ export interface ResultadoPreseleccionDetallado {
 // PRIVACIDAD_PUNTAJES_PRESELECCION). Mismo cálculo de puntaje que
 // generar-top-bracket, pero sin cortar ni exigir que esté completo — acá
 // "completo" es solo un dato más por fila.
-async function calcularResultadosPreseleccionDetallados(categoria: Categoria): Promise<ResultadoPreseleccionDetallado[]> {
+async function calcularResultadosPreseleccionDetallados(
+    categoria: Categoria,
+    // true solo para /resultados (ver GET .../preseleccion/resultados): esa
+    // vista pública es un listado informativo de QUIÉN SE REGISTRÓ, no la
+    // cola real de Preselección — ahí sí debe aparecer todo mundo, se haya
+    // presentado o no. /pantalla y /pantalla/tablero (el roster en vivo que
+    // guía a los jueces) siguen llamando esta función SIN el flag, para que
+    // solo aparezca quién de verdad está en el venue (ver Registration.
+    // estadoAcceso / ESTADOS_ACCESO_ELEGIBLES).
+    incluirNoEscaneados = false,
+): Promise<ResultadoPreseleccionDetallado[]> {
     const participantes = await prisma.registration.findMany({
         where: {
             categoria,
             estatusPago: "PAGADO",
             esPrueba: await modoPruebaActivo(),
-            estadoAcceso: { in: ESTADOS_ACCESO_ELEGIBLES },
+            ...(incluirNoEscaneados ? {} : { estadoAcceso: { in: ESTADOS_ACCESO_ELEGIBLES } }),
         },
         select: {
             id: true,
@@ -1038,9 +1048,12 @@ competenciaRouter.get("/categorias/:categoria/preseleccion/resultados", async (r
     if (!TODAS_LAS_CATEGORIAS.includes(categoria)) {
         return res.status(404).json({ error: "Categoría desconocida" });
     }
+    // Solo /resultados (vista pública informativa) manda esto — ver
+    // calcularResultadosPreseleccionDetallados.
+    const incluirNoEscaneados = req.query.incluirNoEscaneados === "1";
 
     const [resultados, revelado] = await Promise.all([
-        calcularResultadosPreseleccionDetallados(categoria),
+        calcularResultadosPreseleccionDetallados(categoria, incluirNoEscaneados),
         preseleccionRevelada(categoria),
     ]);
     return res.json({ resultados: ocultarPuntajesSiNoRevelado(resultados, revelado) });

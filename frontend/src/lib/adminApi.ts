@@ -375,9 +375,14 @@ export type ResultadoPreseleccionItem = {
     completo: boolean;
 };
 
-export function getResultadosPreseleccion(categoria: Categoria) {
+// incluirNoEscaneados: SOLO para /resultados (listado público informativo de
+// quién se registró) — /pantalla y /pantalla/tablero (el roster en vivo que
+// guía a los jueces) deben seguir llamando esto sin el flag, para que solo
+// aparezca quién de verdad está en el venue.
+export function getResultadosPreseleccion(categoria: Categoria, incluirNoEscaneados = false) {
+    const query = incluirNoEscaneados ? "?incluirNoEscaneados=1" : "";
     return adminFetch<{ resultados: ResultadoPreseleccionItem[] }>(
-        `/api/competencia/categorias/${categoria}/preseleccion/resultados`,
+        `/api/competencia/categorias/${categoria}/preseleccion/resultados${query}`,
     );
 }
 
