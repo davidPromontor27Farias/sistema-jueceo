@@ -160,7 +160,7 @@ function ColumnaRosterEscenario({
                                 </span>
                             ) : (
                                 <span className="shrink-0 rounded-full bg-black/60 px-2 py-0.5 font-display text-[10px] uppercase tracking-wide text-boss-gray sm:text-xs">
-                                    {p.calificacionesRecibidas}/{p.juecesActivos}
+                                    {p.calificacionesRecibidas}/{p.calificacionesEsperadas}
                                 </span>
                             )}
                         </div>

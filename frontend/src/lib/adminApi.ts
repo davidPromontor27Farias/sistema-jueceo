@@ -27,7 +27,15 @@ export type Escenario = {
 };
 
 export type EstatusCompetencia = "NO_INICIADA" | "PRESELECCION" | "REPECHAJE_DESEMPATE" | "EN_CURSO" | "FINALIZADA";
-export type CategoriaEstado = { categoria: Categoria; label: string; estatus: EstatusCompetencia };
+export type CategoriaEstado = {
+    categoria: Categoria;
+    label: string;
+    estatus: EstatusCompetencia;
+    // Solo se puede fijar mientras estatus sigue en NO_INICIADA (ver PATCH
+    // /categorias/:categoria en el backend) — una vez arrancada la
+    // Preselección queda fijo para esa categoría.
+    preseleccionDosRondas: boolean;
+};
 
 export type EstatusEnfrentamiento = "PENDIENTE" | "EN_CURSO" | "FINALIZADO";
 export type CompetidorResumen = {
@@ -279,6 +287,16 @@ export function patchCategoriaEstado(categoria: Categoria, estatus: EstatusCompe
     );
 }
 
+// Solo se puede llamar mientras la categoría sigue en NO_INICIADA — el
+// backend lo rechaza en cuanto arranca Preselección (ver PATCH
+// /categorias/:categoria).
+export function patchCategoriaDosRondas(categoria: Categoria, preseleccionDosRondas: boolean) {
+    return adminFetch<{ estado: { categoria: Categoria; preseleccionDosRondas: boolean } }>(
+        `/api/competencia/categorias/${categoria}`,
+        { method: "PATCH", body: JSON.stringify({ preseleccionDosRondas }) },
+    );
+}
+
 export function getCompetidoresPorCategoria(categoria: Categoria) {
     return adminFetch<{ competidores: NonNullable<CompetidorResumen>[] }>(
         `/api/competencia/competidores?categoria=${categoria}`,
@@ -308,14 +326,30 @@ export type ParticipantePreseleccion = {
     competidorId: string | null;
     fotoUrl: string | null;
     calificacionesRecibidas: number;
+    // Cuántas presentaciones hacen falta en total para "completo" — igual a
+    // juecesActivos salvo en categorías "dos rondas" en preselección normal,
+    // donde se duplica.
+    calificacionesEsperadas: number;
     puntajeTotal: number | null;
     yaCalifique: boolean;
+    // 1 o 2: en qué ronda cae esta fila para el juez que pregunta (ver
+    // dosRondas/rondaJuez más abajo) — siempre 1 fuera de una categoría "dos
+    // rondas" o en repechaje.
+    rondaVigente: 1 | 2;
 };
 
 export function getParticipantesPreseleccion(categoria: Categoria, escenarioId: string) {
-    return adminFetch<{ participantes: ParticipantePreseleccion[]; juecesActivos: number }>(
-        `/api/competencia/preseleccion/participantes?categoria=${categoria}&escenarioId=${escenarioId}`,
-    );
+    return adminFetch<{
+        participantes: ParticipantePreseleccion[];
+        juecesActivos: number;
+        // true si la categoría se marcó "dos rondas" antes de arrancar
+        // Preselección (ver EstadoCategoria.preseleccionDosRondas).
+        dosRondas: boolean;
+        // En qué ronda está AHORA el juez que pregunta para su escenario (1
+        // hasta terminar toda su ronda 1, luego 2) — 1 siempre si dosRondas
+        // es false, o si quien pregunta no es JUEZ (admin/staff).
+        rondaJuez: 1 | 2;
+    }>(`/api/competencia/preseleccion/participantes?categoria=${categoria}&escenarioId=${escenarioId}`);
 }
 
 export type PuntajesPreseleccion = {
@@ -327,7 +361,7 @@ export type PuntajesPreseleccion = {
 };
 
 export function calificarPreseleccion(registrationId: string, puntajes: PuntajesPreseleccion) {
-    return adminFetch<{ ok: true }>(`/api/competencia/preseleccion/${registrationId}/calificar`, {
+    return adminFetch<{ ok: true; rondaPreseleccion: 1 | 2 }>(`/api/competencia/preseleccion/${registrationId}/calificar`, {
         method: "POST",
         body: JSON.stringify(puntajes),
     });
@@ -363,6 +397,9 @@ export type ResultadoPreseleccionItem = {
     // Jueces activos DE SU ESCENARIO (ya no es un solo número global, cada
     // fila puede tener uno distinto — ver Preselección Paralela Multiescenario).
     juecesActivos: number;
+    // Cuántas presentaciones hacen falta en total para "completo" — igual a
+    // juecesActivos salvo en categorías "dos rondas" en preselección normal.
+    calificacionesEsperadas: number;
     puntajeTotal: number | null;
     // Cadena de desempate cuando dos o más empatan en puntajeTotal (ver
     // calcularCorte en el backend): Musicalidad -> Ejecución -> Originalidad
@@ -413,6 +450,7 @@ export type FaltantePreseleccion = {
     nombre: string;
     calificacionesRecibidas: number;
     juecesActivos: number;
+    calificacionesEsperadas: number;
 };
 
 export type ParticipanteEmpatado = { id: string; nombre: string; puntajeTotal: number };

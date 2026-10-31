@@ -41,7 +41,18 @@ const MINIMO_PRESELECCION = 3;
 const ESTATUS_COMPETENCIA_PATCH = ["NO_INICIADA", "PRESELECCION", "EN_CURSO", "FINALIZADA"] as const;
 const ESTATUS_ENFRENTAMIENTO = ["PENDIENTE", "EN_CURSO", "FINALIZADO"] as const;
 
-const patchCategoriaSchema = z.object({ estatus: z.enum(ESTATUS_COMPETENCIA_PATCH) });
+const patchCategoriaSchema = z
+    .object({
+        estatus: z.enum(ESTATUS_COMPETENCIA_PATCH).optional(),
+        // Si esta categoría califica en Preselección con dos presentaciones
+        // por competidor en vez de una — solo se puede fijar mientras sigue
+        // en NO_INICIADA (ver la ruta), para no mezclar calificaciones de
+        // una "forma" con la otra a medio camino.
+        preseleccionDosRondas: z.boolean().optional(),
+    })
+    .refine((data) => data.estatus !== undefined || data.preseleccionDosRondas !== undefined, {
+        message: "Nada que actualizar",
+    });
 
 const crearEnfrentamientoSchema = z.object({
     categoria: z.enum(CATEGORIAS_ENUM),
@@ -95,6 +106,60 @@ const COMPETIDOR_SELECT = {
 // cambios). Ver Preselección Paralela Multiescenario.
 async function juecesActivosEnEscenario(escenarioId: string): Promise<number> {
     return prisma.adminUser.count({ where: { rol: "JUEZ", activo: true, escenarioId } });
+}
+
+async function categoriaUsaDosRondas(categoria: Categoria): Promise<boolean> {
+    const estado = await prisma.estadoCategoria.findUnique({
+        where: { categoria },
+        select: { preseleccionDosRondas: true },
+    });
+    return estado?.preseleccionDosRondas ?? false;
+}
+
+// Cuántas presentaciones por juez hace falta para considerar completo a un
+// competidor: 2 si su categoría quedó marcada "dos rondas" Y sigue en
+// preselección normal (numeroDesempate 0); el repechaje (empate en la
+// frontera del corte) siempre es de una sola presentación, sin importar este
+// ajuste — sería absurdo pedirles dos rondas extra a quienes ya desempataron.
+function rondasEsperadasPreseleccion(dosRondas: boolean, numeroDesempate: number): number {
+    return dosRondas && numeroDesempate === 0 ? 2 : 1;
+}
+
+// En qué ronda (1 o 2) está AHORA un juez para su propio escenario, en una
+// categoría marcada "dos rondas": la ronda 2 solo se desbloquea para ese juez
+// cuando ya calificó en ronda 1 a TODOS los competidores de preselección
+// normal (numeroDesempate 0) de su escenario — el repechaje nunca entra en
+// esta cuenta (ver rondasEsperadasPreseleccion). Se usa tanto para decidir
+// qué lista de "pendientes" ve el juez como para fijar en qué ronda cae cada
+// calificación que manda (POST .../calificar decide esto en el servidor, no
+// confía en lo que mande el cliente).
+async function rondaVigentePreseleccionJuez(
+    juezId: string,
+    categoria: Categoria,
+    escenarioId: string,
+): Promise<1 | 2> {
+    const elegibles = await prisma.registration.findMany({
+        where: {
+            categoria,
+            preseleccionEscenarioId: escenarioId,
+            preseleccionNumeroDesempate: 0,
+            estatusPago: "PAGADO",
+            esPrueba: await modoPruebaActivo(),
+            estadoAcceso: { in: ESTADOS_ACCESO_ELEGIBLES },
+        },
+        select: { id: true },
+    });
+    if (elegibles.length === 0) return 1;
+
+    const calificadosRonda1 = await prisma.puntuacionPreseleccion.count({
+        where: {
+            juezId,
+            numeroDesempate: 0,
+            rondaPreseleccion: 1,
+            registrationId: { in: elegibles.map((e) => e.id) },
+        },
+    });
+    return calificadosRonda1 >= elegibles.length ? 2 : 1;
 }
 
 interface FilaRondaNueva {
@@ -508,6 +573,7 @@ competenciaRouter.get("/categorias", async (_req, res) => {
         categoria,
         label: CATEGORIAS_LABEL[categoria],
         estatus: porCategoria.get(categoria)?.estatus ?? "NO_INICIADA",
+        preseleccionDosRondas: porCategoria.get(categoria)?.preseleccionDosRondas ?? false,
     }));
 
     return res.json({ categorias });
@@ -553,10 +619,30 @@ competenciaRouter.patch(
             }
         }
 
+        if (parsed.data.preseleccionDosRondas !== undefined) {
+            const estadoActual = await prisma.estadoCategoria.findUnique({ where: { categoria } });
+            if ((estadoActual?.estatus ?? "NO_INICIADA") !== "NO_INICIADA") {
+                return res.status(400).json({
+                    error: "Esta categoría ya arrancó — 'dos rondas' solo se puede fijar antes de iniciar Preselección.",
+                });
+            }
+        }
+
         const estado = await prisma.estadoCategoria.upsert({
             where: { categoria },
-            create: { categoria, estatus: parsed.data.estatus },
-            update: { estatus: parsed.data.estatus },
+            create: {
+                categoria,
+                estatus: parsed.data.estatus ?? "NO_INICIADA",
+                ...(parsed.data.preseleccionDosRondas !== undefined
+                    ? { preseleccionDosRondas: parsed.data.preseleccionDosRondas }
+                    : {}),
+            },
+            update: {
+                ...(parsed.data.estatus !== undefined ? { estatus: parsed.data.estatus } : {}),
+                ...(parsed.data.preseleccionDosRondas !== undefined
+                    ? { preseleccionDosRondas: parsed.data.preseleccionDosRondas }
+                    : {}),
+            },
         });
 
         return res.json({ estado });
@@ -702,6 +788,8 @@ competenciaRouter.get(
             return res.status(400).json({ error: "Falta escenarioId" });
         }
 
+        const dosRondas = await categoriaUsaDosRondas(categoria);
+
         const participantes = await prisma.registration.findMany({
             where: {
                 categoria,
@@ -723,6 +811,13 @@ competenciaRouter.get(
         });
         const ids = participantes.map((p) => p.id);
 
+        // En qué ronda está el juez que pregunta — solo aplica para un JUEZ
+        // real (admin/staff no califican, no tienen "ronda vigente" propia).
+        const rondaJuez =
+            req.admin!.rol === "JUEZ" && dosRondas
+                ? await rondaVigentePreseleccionJuez(req.admin!.id, categoria, escenarioId)
+                : 1;
+
         const [conteos, juecesActivos, misPuntuaciones] = await Promise.all([
             prisma.puntuacionPreseleccion.groupBy({
                 by: ["registrationId", "numeroDesempate"],
@@ -734,7 +829,7 @@ competenciaRouter.get(
             req.admin!.rol === "JUEZ"
                 ? prisma.puntuacionPreseleccion.findMany({
                       where: { juezId: req.admin!.id, registrationId: { in: ids } },
-                      select: { registrationId: true, numeroDesempate: true },
+                      select: { registrationId: true, numeroDesempate: true, rondaPreseleccion: true },
                   })
                 : Promise.resolve([]),
         ]);
@@ -745,9 +840,18 @@ competenciaRouter.get(
         // historial, pero no cuentan para "ya califiqué"/puntaje actual.
         const conteoPorLlave = new Map(conteos.map((c) => [`${c.registrationId}:${c.numeroDesempate}`, c]));
         const numeroDesempatePorId = new Map(participantes.map((p) => [p.id, p.preseleccionNumeroDesempate]));
+        // "Ya califiqué" depende además de la ronda vigente del JUEZ cuando
+        // la categoría es "dos rondas": terminar la ronda 1 de todos no debe
+        // mostrar la lista entera como "ya calificada" — la ronda 2 arranca
+        // de cero. En repechaje o categorías de una sola ronda, rondaVigente
+        // de cada fila siempre vale 1, mismo comportamiento que antes.
         const yaCalifique = new Set(
             misPuntuaciones
-                .filter((c) => c.numeroDesempate === numeroDesempatePorId.get(c.registrationId))
+                .filter((c) => {
+                    if (c.numeroDesempate !== numeroDesempatePorId.get(c.registrationId)) return false;
+                    const rondaVigente = dosRondas && c.numeroDesempate === 0 ? rondaJuez : 1;
+                    return c.rondaPreseleccion === rondaVigente;
+                })
                 .map((c) => c.registrationId),
         );
 
@@ -757,6 +861,7 @@ competenciaRouter.get(
             const puntajeTotal = s
                 ? (s.tecnica ?? 0) + (s.ejecucion ?? 0) + (s.vocabulario ?? 0) + (s.musicalidad ?? 0) + (s.originalidad ?? 0)
                 : null;
+            const rondasEsperadas = rondasEsperadasPreseleccion(dosRondas, p.preseleccionNumeroDesempate);
             return {
                 id: p.id,
                 nombreArtistico: p.nombreArtistico,
@@ -765,12 +870,14 @@ competenciaRouter.get(
                 competidorId: p.competidorId,
                 fotoUrl: p.fotoUrl,
                 calificacionesRecibidas: c?._count.id ?? 0,
+                calificacionesEsperadas: juecesActivos * rondasEsperadas,
                 puntajeTotal,
                 yaCalifique: yaCalifique.has(p.id),
+                rondaVigente: dosRondas && p.preseleccionNumeroDesempate === 0 ? rondaJuez : 1,
             };
         });
 
-        return res.json({ participantes: resultado, juecesActivos });
+        return res.json({ participantes: resultado, juecesActivos, dosRondas, rondaJuez });
     },
 );
 
@@ -821,13 +928,22 @@ competenciaRouter.post("/preseleccion/:registrationId/calificar", requireRole("J
     // preselección normal, o la ronda de repechaje en curso si quedó
     // empatado en la frontera de corte (ver preseleccionNumeroDesempate).
     const numeroDesempate = registro.preseleccionNumeroDesempate;
+    // La RONDA (1 o 2, ver PuntuacionPreseleccion.rondaPreseleccion) la
+    // decide el servidor, nunca el cliente: en preselección normal de una
+    // categoría "dos rondas" es la ronda vigente de ESTE juez (no se
+    // desbloquea la 2 hasta terminar la 1 con todo su escenario) — el
+    // repechaje y las categorías de una sola ronda siempre califican en 1.
+    const rondaPreseleccion =
+        numeroDesempate === 0 && estado.preseleccionDosRondas
+            ? await rondaVigentePreseleccionJuez(req.admin!.id, registro.categoria, registro.preseleccionEscenarioId!)
+            : 1;
     try {
         await prisma.puntuacionPreseleccion.create({
-            data: { registrationId, juezId: req.admin!.id, numeroDesempate, ...parsed.data },
+            data: { registrationId, juezId: req.admin!.id, numeroDesempate, rondaPreseleccion, ...parsed.data },
         });
     } catch (error: any) {
         if (error.code === "P2002") {
-            return res.status(409).json({ error: "Ya calificaste a este participante" });
+            return res.status(409).json({ error: "Ya calificaste a este participante en esta ronda" });
         }
         console.error(error);
         return res.status(500).json({ error: "No se pudo guardar la calificación" });
@@ -843,7 +959,7 @@ competenciaRouter.post("/preseleccion/:registrationId/calificar", requireRole("J
         await intentarResolverRepechaje(registro.categoria);
     }
 
-    return res.status(201).json({ ok: true });
+    return res.status(201).json({ ok: true, rondaPreseleccion });
 });
 
 // Cuánto se calificó a un participante de Preselección en UNA ronda puntual
@@ -888,6 +1004,11 @@ export interface ResultadoPreseleccionDetallado {
     numeroDesempate: number;
     calificacionesRecibidas: number;
     juecesActivos: number;
+    // Cuántas presentaciones hacen falta en total para "completo": igual a
+    // juecesActivos salvo en categorías "dos rondas" (ver
+    // rondasEsperadasPreseleccion), donde se duplica mientras la fila siga en
+    // preselección normal (numeroDesempate 0).
+    calificacionesEsperadas: number;
     puntajeTotal: number | null;
     // Cadena de desempate del reglamento (ver calcularCorte en
     // generar-top-bracket): Musicalidad -> Ejecución -> Originalidad ->
@@ -919,6 +1040,7 @@ async function calcularResultadosPreseleccionDetallados(
     // estadoAcceso / ESTADOS_ACCESO_ELEGIBLES).
     incluirNoEscaneados = false,
 ): Promise<ResultadoPreseleccionDetallado[]> {
+    const dosRondas = await categoriaUsaDosRondas(categoria);
     const participantes = await prisma.registration.findMany({
         where: {
             categoria,
@@ -968,6 +1090,7 @@ async function calcularResultadosPreseleccionDetallados(
             const s = sumaPorLlave.get(`${p.id}:${p.preseleccionNumeroDesempate}`);
             const calificacionesRecibidas = s?._count.id ?? 0;
             const juecesActivos = p.preseleccionEscenario ? juecesActivosPorEscenario.get(p.preseleccionEscenario.id) ?? 0 : 0;
+            const calificacionesEsperadas = juecesActivos * rondasEsperadasPreseleccion(dosRondas, p.preseleccionNumeroDesempate);
             const puntajeTotal = s
                 ? (s._sum.tecnica ?? 0) +
                   (s._sum.ejecucion ?? 0) +
@@ -991,12 +1114,13 @@ async function calcularResultadosPreseleccionDetallados(
                 numeroDesempate: p.preseleccionNumeroDesempate,
                 calificacionesRecibidas,
                 juecesActivos,
+                calificacionesEsperadas,
                 puntajeTotal,
                 musicalidadTotal,
                 ejecucionTotal,
                 originalidadTotal,
                 tecnicaTotal,
-                completo: juecesActivos > 0 && calificacionesRecibidas >= juecesActivos,
+                completo: juecesActivos > 0 && calificacionesRecibidas >= calificacionesEsperadas,
             };
         });
         // Sin reordenar por puntaje acá a propósito: este mismo resultado lo
@@ -1180,6 +1304,9 @@ interface FaltantePreseleccion {
     nombre: string;
     calificacionesRecibidas: number;
     juecesActivos: number;
+    // Ver calificacionesEsperadas en ResultadoPreseleccionDetallado: igual a
+    // juecesActivos salvo en categorías "dos rondas" en preselección normal.
+    calificacionesEsperadas: number;
 }
 
 // Rankea a los competidores pagados de una categoría por su puntaje
@@ -1192,6 +1319,7 @@ interface FaltantePreseleccion {
 async function calcularRankingPreseleccion(
     categoria: Categoria,
 ): Promise<{ ranking: RankingPreseleccion[]; faltantes: FaltantePreseleccion[] } | { error: string }> {
+    const dosRondas = await categoriaUsaDosRondas(categoria);
     const competidores = await prisma.registration.findMany({
         where: {
             categoria,
@@ -1238,8 +1366,9 @@ async function calcularRankingPreseleccion(
         const juecesActivos = c.preseleccionEscenarioId ? juecesActivosPorEscenario.get(c.preseleccionEscenarioId) ?? 0 : 0;
         const s = sumaPorLlave.get(`${c.id}:${c.preseleccionNumeroDesempate}`);
         const calificacionesRecibidas = s?._count.id ?? 0;
-        if (juecesActivos === 0 || calificacionesRecibidas < juecesActivos) {
-            faltantes.push({ id: c.id, nombre, calificacionesRecibidas, juecesActivos });
+        const calificacionesEsperadas = juecesActivos * rondasEsperadasPreseleccion(dosRondas, c.preseleccionNumeroDesempate);
+        if (juecesActivos === 0 || calificacionesRecibidas < calificacionesEsperadas) {
+            faltantes.push({ id: c.id, nombre, calificacionesRecibidas, juecesActivos, calificacionesEsperadas });
             continue;
         }
         const puntajeTotal =

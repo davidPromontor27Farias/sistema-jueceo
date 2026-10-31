@@ -15,6 +15,7 @@ import {
     getPantallaEstado,
     getResultadosPreseleccionStaff,
     iniciarPreseleccion,
+    patchCategoriaDosRondas,
     patchCategoriaEstado,
     patchPantallaEstado,
     updateEnfrentamiento,
@@ -158,6 +159,19 @@ function CompetenciaContenido() {
         cargarCategorias();
     };
 
+    // Solo disponible mientras la categoría sigue en NO_INICIADA (el backend
+    // lo rechaza después) — cada juez tendrá que completar la ronda 1 de todo
+    // su escenario antes de que se le desbloquee la ronda 2 (ver admin/jueceo).
+    const toggleDosRondas = async (categoria: Categoria, valorActual: boolean) => {
+        setError(null);
+        const resultado = await patchCategoriaDosRondas(categoria, !valorActual);
+        if (!resultado.ok) {
+            setError(resultado.error);
+            return;
+        }
+        cargarCategorias();
+    };
+
     // Antes había que enfocar la categoría en Control de pantallas Y
     // seleccionarla aquí para trabajarla — dos pasos para lo mismo. Ahora,
     // elegir una categoría aquí también la enfoca en la pantalla pública de
@@ -213,13 +227,24 @@ function CompetenciaContenido() {
                         </button>
 
                         {c.estatus === "NO_INICIADA" && (
-                            <button
-                                type="button"
-                                onClick={() => iniciarPreseleccionCategoria(c.categoria)}
-                                className="rounded-md border border-boss-border px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-white transition-colors hover:border-boss-red hover:text-boss-red"
-                            >
-                                Iniciar preselección
-                            </button>
+                            <div className="flex items-center gap-3">
+                                <label className="flex items-center gap-1.5 text-xs font-medium text-boss-gray">
+                                    <input
+                                        type="checkbox"
+                                        checked={c.preseleccionDosRondas}
+                                        onChange={() => toggleDosRondas(c.categoria, c.preseleccionDosRondas)}
+                                        className="h-3.5 w-3.5 accent-boss-red"
+                                    />
+                                    Dos rondas
+                                </label>
+                                <button
+                                    type="button"
+                                    onClick={() => iniciarPreseleccionCategoria(c.categoria)}
+                                    className="rounded-md border border-boss-border px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-white transition-colors hover:border-boss-red hover:text-boss-red"
+                                >
+                                    Iniciar preselección
+                                </button>
+                            </div>
                         )}
 
                         <select
@@ -367,7 +392,7 @@ function PanelPreseleccion({ categoria, estatus }: { categoria: Categoria; estat
                                 )}
                             </span>
                             <span className={p.completo ? "text-boss-green" : "text-boss-gray"}>
-                                {p.puntajeTotal ?? "—"} pts · {p.calificacionesRecibidas}/{p.juecesActivos} jueces
+                                {p.puntajeTotal ?? "—"} pts · {p.calificacionesRecibidas}/{p.calificacionesEsperadas} calificaciones
                             </span>
                         </div>
                     ))}
@@ -434,7 +459,7 @@ function RosterEscenario({
                             )}
                         </span>
                         <span className={`shrink-0 text-xs ${p.completo ? "text-boss-green" : "text-boss-gray"}`}>
-                            {p.completo ? "✓ Calificado" : `${p.calificacionesRecibidas}/${p.juecesActivos} jueces`}
+                            {p.completo ? "✓ Calificado" : `${p.calificacionesRecibidas}/${p.calificacionesEsperadas} calificaciones`}
                         </span>
                     </div>
                 ))}

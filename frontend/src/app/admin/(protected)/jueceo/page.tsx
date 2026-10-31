@@ -167,6 +167,11 @@ const PUNTAJES_PRESELECCION_INICIALES: PuntajesPreseleccion = {
 // según lo que vaya viendo en vivo.
 function PreseleccionCategoria({ categoria, escenarioId }: { categoria: Categoria; escenarioId: string }) {
     const [participantes, setParticipantes] = useState<ParticipantePreseleccion[] | null>(null);
+    // dosRondas/rondaJuez vienen del backend (ver GET .../preseleccion/
+    // participantes): la ronda 2 solo se desbloquea para este juez cuando ya
+    // calificó en ronda 1 a TODOS los competidores de SU escenario.
+    const [dosRondas, setDosRondas] = useState(false);
+    const [rondaJuez, setRondaJuez] = useState<1 | 2>(1);
     const [error, setError] = useState<string | null>(null);
     const [calificandoId, setCalificandoId] = useState<string | null>(null);
 
@@ -174,6 +179,8 @@ function PreseleccionCategoria({ categoria, escenarioId }: { categoria: Categori
         getParticipantesPreseleccion(categoria, escenarioId).then((resp) => {
             if (resp.ok) {
                 setParticipantes(resp.data.participantes);
+                setDosRondas(resp.data.dosRondas);
+                setRondaJuez(resp.data.rondaJuez);
                 setError(null);
             } else {
                 setError(resp.error);
@@ -192,9 +199,22 @@ function PreseleccionCategoria({ categoria, escenarioId }: { categoria: Categori
 
     return (
         <div className="mt-6 rounded-lg border border-boss-border bg-boss-panel/60 p-5">
-            <p className="font-display text-lg uppercase tracking-wide text-white">Preselección — {CATEGORIAS[categoria]}</p>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="font-display text-lg uppercase tracking-wide text-white">
+                    Preselección — {CATEGORIAS[categoria]}
+                </p>
+                {dosRondas && (
+                    <span className="rounded-full bg-boss-red/15 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-boss-red">
+                        Ronda {rondaJuez} de 2
+                    </span>
+                )}
+            </div>
             <p className="mt-1 text-sm text-boss-gray">
-                Califica a cada competidor de tu escenario conforme se vaya presentando, en el orden que prefieras.
+                {!dosRondas
+                    ? "Califica a cada competidor de tu escenario conforme se vaya presentando, en el orden que prefieras."
+                    : rondaJuez === 1
+                      ? "Esta categoría es de dos rondas: completa la ronda 1 con todo tu escenario antes de que se desbloquee la ronda 2."
+                      : "Ronda 1 completa — ahora califica la ronda 2 de cada competidor de tu escenario."}
             </p>
 
             {error && <p className="mt-2 text-sm font-medium text-red-400">{error}</p>}
@@ -205,7 +225,7 @@ function PreseleccionCategoria({ categoria, escenarioId }: { categoria: Categori
 
             {calificando ? (
                 <FormularioPreseleccion
-                    key={calificando.id}
+                    key={`${calificando.id}-${calificando.rondaVigente}`}
                     participante={calificando}
                     onCalificado={() => {
                         setCalificandoId(null);
@@ -222,6 +242,7 @@ function PreseleccionCategoria({ categoria, escenarioId }: { categoria: Categori
                                 key={p.id}
                                 numero={i + 1}
                                 participante={p}
+                                dosRondas={dosRondas}
                                 onCalificar={() => setCalificandoId(p.id)}
                             />
                         ))}
@@ -239,10 +260,12 @@ function nombreParticipante(p: ParticipantePreseleccion): string {
 function FilaParticipante({
     numero,
     participante,
+    dosRondas,
     onCalificar,
 }: {
     numero: number;
     participante: ParticipantePreseleccion;
+    dosRondas: boolean;
     onCalificar: () => void;
 }) {
     return (
@@ -251,7 +274,7 @@ function FilaParticipante({
             <span className="flex-1 truncate text-sm text-white">{nombreParticipante(participante)}</span>
             {participante.yaCalifique ? (
                 <span className="shrink-0 rounded-full border border-boss-green/40 bg-boss-green/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-boss-green">
-                    ✓ Calificado
+                    ✓ Calificado{dosRondas ? ` (ronda ${participante.rondaVigente})` : ""}
                 </span>
             ) : (
                 <button
@@ -304,7 +327,14 @@ function FormularioPreseleccion({
     return (
         <div className="mt-3 rounded-md border border-boss-border p-4">
             <div className="flex items-center justify-between gap-3">
-                <p className="font-display text-base uppercase text-white">{nombreParticipante(participante)}</p>
+                <p className="font-display text-base uppercase text-white">
+                    {nombreParticipante(participante)}
+                    {participante.rondaVigente === 2 && (
+                        <span className="ml-2 rounded-full bg-boss-red/15 px-2 py-0.5 text-[11px] normal-case text-boss-red">
+                            Ronda 2
+                        </span>
+                    )}
+                </p>
                 <button
                     type="button"
                     onClick={onCancelar}

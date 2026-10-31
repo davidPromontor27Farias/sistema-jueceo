@@ -389,20 +389,23 @@ function TarjetaBracket({
                 <div className="border-b border-boss-border px-2.5 py-1.5 text-sm uppercase tracking-wide text-boss-gray">
                     {enfrentamiento.estatus === "FINALIZADO" ? "Finalizado" : "Pendiente"}
                 </div>
-                <FilaCompetidorBracket
-                    competidor={enfrentamiento.competidorA}
-                    esGanador={!!enfrentamiento.ganador && enfrentamiento.ganador.id === enfrentamiento.competidorA?.id}
-                    resaltado={!!resaltarId && enfrentamiento.competidorA?.id === resaltarId}
-                />
                 {esBye ? (
                     <div className="px-2.5 py-2 text-base italic text-boss-gray">BYE</div>
                 ) : (
+                    // competidorB es el lado ROJO = mayor puntaje/mejor sembrado de la
+                    // pareja (ver filasParaRonda) — se dibuja ARRIBA, el de menor
+                    // puntaje (competidorA, lado AZUL) siempre ABAJO.
                     <FilaCompetidorBracket
                         competidor={enfrentamiento.competidorB}
                         esGanador={!!enfrentamiento.ganador && enfrentamiento.ganador.id === enfrentamiento.competidorB?.id}
                         resaltado={!!resaltarId && enfrentamiento.competidorB?.id === resaltarId}
                     />
                 )}
+                <FilaCompetidorBracket
+                    competidor={enfrentamiento.competidorA}
+                    esGanador={!!enfrentamiento.ganador && enfrentamiento.ganador.id === enfrentamiento.competidorA?.id}
+                    resaltado={!!resaltarId && enfrentamiento.competidorA?.id === resaltarId}
+                />
             </div>
             <EtiquetaIdPartido texto={idPartido} />
         </div>
@@ -450,15 +453,16 @@ function TarjetaBracketFinal({
             <div className="flex items-center justify-center gap-1.5 border-b border-boss-red/50 bg-boss-red/10 px-2 py-2 font-display text-xl uppercase tracking-widest text-boss-red">
                 Final
             </div>
-            <FilaCompetidorBracket
-                competidor={enfrentamiento.competidorA}
-                esGanador={!!enfrentamiento.ganador && enfrentamiento.ganador.id === enfrentamiento.competidorA?.id}
-                resaltado={!!resaltarId && enfrentamiento.competidorA?.id === resaltarId}
-            />
+            {/* competidorB = mayor puntaje/mejor sembrado arriba, competidorA abajo — ver TarjetaBracket. */}
             <FilaCompetidorBracket
                 competidor={enfrentamiento.competidorB}
                 esGanador={!!enfrentamiento.ganador && enfrentamiento.ganador.id === enfrentamiento.competidorB?.id}
                 resaltado={!!resaltarId && enfrentamiento.competidorB?.id === resaltarId}
+            />
+            <FilaCompetidorBracket
+                competidor={enfrentamiento.competidorA}
+                esGanador={!!enfrentamiento.ganador && enfrentamiento.ganador.id === enfrentamiento.competidorA?.id}
+                resaltado={!!resaltarId && enfrentamiento.competidorA?.id === resaltarId}
             />
         </div>
     );

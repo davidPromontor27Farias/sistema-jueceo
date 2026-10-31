@@ -198,6 +198,14 @@ model EstadoCategoria {
   // Total de rondas del bracket generado (ceil(log2(N)) al momento de crearlo),
   // para poder nombrar bien las rondas siguientes al avanzar automáticamente.
   totalRondas Int?
+  // Si esta categoría califica en Preselección con DOS presentaciones por
+  // competidor en vez de una (ver PuntuacionPreseleccion.rondaPreseleccion):
+  // se decide antes de arrancar Preselección (solo mientras sigue en
+  // NO_INICIADA, ver PATCH /categorias/:categoria) y ya no se puede cambiar
+  // después — cambiarlo a medio camino dejaría calificaciones de una
+  // "forma" mezcladas con la otra. El repechaje (empate en el corte) sigue
+  // siendo de una sola presentación siempre, sin importar este valor.
+  preseleccionDosRondas Boolean @default(false)
   updatedAt   DateTime            @updatedAt
 
   @@map("estado_categorias")
@@ -343,6 +351,14 @@ model PuntuacionPreseleccion {
   // competidor (re-presentación individual) en vez de por pelea.
   numeroDesempate Int @default(0)
 
+  // 1 o 2: en categorías con EstadoCategoria.preseleccionDosRondas, cada
+  // juez califica a cada competidor DOS veces (dos presentaciones) antes de
+  // que cuente su calificación — el puntaje vigente del competidor es la
+  // SUMA de sus filas de ronda 1 y ronda 2 (ver calcularRankingPreseleccion).
+  // En categorías de una sola ronda, y siempre en repechaje (numeroDesempate
+  // > 0), queda fijo en 1.
+  rondaPreseleccion Int @default(1)
+
   tecnica      Int
   ejecucion    Int
   vocabulario  Int
@@ -352,7 +368,7 @@ model PuntuacionPreseleccion {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([registrationId, juezId, numeroDesempate])
+  @@unique([registrationId, juezId, numeroDesempate, rondaPreseleccion])
   @@map("puntuaciones_preseleccion")
 }
 
